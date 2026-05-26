@@ -40,6 +40,13 @@ function buildSubmissionEmbed(submission, creatorId) {
     .setTimestamp();
 }
 
+async function sendLog(message, content) {
+  if (!config.logsChannelId) return;
+  const channel = await message.guild.channels.fetch(config.logsChannelId).catch(() => null);
+  if (!channel) return;
+  await channel.send(content).catch(() => {});
+}
+
 export async function handleMessageCreate(message, renderQueue) {
   if (message.author.bot || !message.guild) return;
 
@@ -104,6 +111,10 @@ export async function handleMessageCreate(message, renderQueue) {
       );
 
       await message.reply("`.litematic` received. Rendering preview now...");
+      await sendLog(
+        message,
+        `📥 Rendering queued in <#${message.channelId}> for ${message.author}: \`${attachment.name}\``
+      );
 
       renderQueue.enqueue({
         ticketId: ticket.id,
@@ -130,11 +141,19 @@ export async function handleMessageCreate(message, renderQueue) {
             embeds: [buildSubmissionEmbed(submission, ticket.creator_id)],
             files: [file]
           });
+          await sendLog(
+            message,
+            `✅ Render complete in <#${message.channelId}> for \`${attachment.name}\``
+          );
         },
         onError: async (error) => {
           queries.updateUploadStatus.run("failed", error.message, attachment.id);
           await message.channel.send(
             `Rendering failed for \`${attachment.name}\`: ${error.message}`
+          );
+          await sendLog(
+            message,
+            `❌ Render failed in <#${message.channelId}> for \`${attachment.name}\`: ${error.message}`
           );
         }
       });
