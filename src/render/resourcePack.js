@@ -13,6 +13,18 @@ function findZipCandidates(textureRoot) {
   ];
 }
 
+async function downloadZip(url, outputPath) {
+  if (!url || String(url).toLowerCase() === "false") return null;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Texture zip download failed: HTTP ${response.status}`);
+  }
+  await fsp.mkdir(path.dirname(outputPath), { recursive: true });
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await fsp.writeFile(outputPath, buffer);
+  return outputPath;
+}
+
 async function hasPngFiles(dir) {
   try {
     const entries = await fsp.readdir(dir);
@@ -62,16 +74,33 @@ async function flattenPngDirectory(sourceDir, targetDir) {
   );
 }
 
-export async function prepareResourcePack(textureRoot) {
+export async function prepareResourcePack(textureRoot, textureZipUrl) {
   const targetDir = path.resolve(process.cwd(), textureRoot);
   if (await hasPngFiles(targetDir)) {
     logger.info("Texture folder ready", { targetDir });
     return;
   }
 
-  const zipPath = findZipCandidates(textureRoot).find((candidate) =>
+  let zipPath = findZipCandidates(textureRoot).find((candidate) =>
     fs.existsSync(candidate)
   );
+
+  if (!zipPath) {
+    const downloadedZip = path.join(process.cwd(), "data", "resource-pack.zip");
+    try {
+      zipPath = await downloadZip(textureZipUrl, downloadedZip);
+      if (zipPath) {
+        logger.info("Downloaded texture zip", { zipPath, textureZipUrl });
+      }
+    } catch (error) {
+      logger.warn("Texture zip download failed; renderer will use fallback materials.", {
+        error: error.message,
+        textureZipUrl,
+        targetDir
+      });
+      return;
+    }
+  }
 
   if (!zipPath) {
     logger.warn("No block textures found; renderer will use generated fallback materials.", {
