@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/28269996/README.md)
 # Publish Schematic Discord Bot
 
 A Node.js + discord.js v14 ticket bot for schematic submissions. It creates a professional publish panel, private ticket channels, two-step modals for submission metadata, SQLite storage, `.litematic` upload detection, duplicate upload prevention, and a worker-thread isometric renderer.
@@ -19,10 +18,13 @@ Discord modals only allow 5 text inputs per modal. This bot keeps all 8 requeste
 ```txt
 DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_id
+DISCORD_CLIENT_ID=your_application_id
 DISCORD_GUILD_ID=your_server_id
 PANEL_CHANNEL_ID=1508792877701140521
 STAFF_ROLE_IDS=role_id_1,role_id_2
 CATEGORY_ID=optional_category_id
+CREATE_TICKET_CATEGORIES=true
+USE_MESSAGE_CONTENT_INTENT=true
 ```
 
 4. Install locally if testing:
@@ -58,7 +60,8 @@ For full `.litematic` upload detection, enable **Message Content Intent** in Dis
 USE_MESSAGE_CONTENT_INTENT=true
 ```
 
-The bot defaults this to `false` so it can start before that privileged intent is enabled.
+This bot defaults this to `true` because upload handling is part of the main workflow.
+If Discord throws `Used disallowed intents`, enable Message Content Intent in the Developer Portal.
 
 ## Minecraft Textures
 
@@ -84,7 +87,7 @@ oak_planks.png
 redstone_block.png
 ```
 
-If a texture is missing, the renderer falls back to a material color so the job still completes. For best “Isometric Renders mod” style output, provide a full vanilla or custom resource-pack texture folder.
+If a texture is missing, the renderer falls back to a material color so the job still completes. For best "Isometric Renders mod" style output, provide a full vanilla or custom resource-pack texture folder.
 
 ## Commands
 
