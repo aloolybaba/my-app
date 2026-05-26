@@ -5,6 +5,7 @@ import { AttachmentBuilder, EmbedBuilder } from "discord.js";
 import { config } from "./config.js";
 import { queries } from "./database/db.js";
 import { logger } from "./logger.js";
+import { brand } from "./panel.js";
 
 const uploadDir = path.join(process.cwd(), "data", "uploads");
 const renderDir = path.join(process.cwd(), "data", "renders");
@@ -21,7 +22,7 @@ function formatBlock(text) {
 
 function buildSubmissionEmbed(submission, creatorId) {
   return new EmbedBuilder()
-    .setColor(0xf1c40f)
+    .setColor(brand.gold)
     .setTitle(submission.schematic_name || "Schematic Submission")
     .setDescription(
       [
@@ -42,7 +43,18 @@ function buildSubmissionEmbed(submission, creatorId) {
 export async function handleMessageCreate(message, renderQueue) {
   if (message.author.bot || !message.guild) return;
 
-  const ticket = queries.getTicketByChannel.get(message.channelId);
+  let ticket = queries.getTicketByChannel.get(message.channelId);
+  if (!ticket && message.channel.name?.startsWith("schematic-")) {
+    const match = message.channel.topic?.match(/\((\d{17,22})\)/);
+    if (match) {
+      const now = Date.now();
+      queries.createTicket.run(message.guild.id, message.channelId, match[1], now);
+      ticket = queries.getTicketByChannel.get(message.channelId);
+      if (ticket && !queries.getSubmissionByTicket.get(ticket.id)) {
+        queries.createSubmission.run(ticket.id, null, null, null, null, null, now, now);
+      }
+    }
+  }
   if (!ticket || ticket.status !== "open") return;
 
   const litematics = [...message.attachments.values()].filter((attachment) =>
@@ -114,21 +126,4 @@ export async function handleMessageCreate(message, renderQueue) {
 
           const submission = queries.getSubmissionByTicket.get(ticket.id);
           const file = new AttachmentBuilder(outputPath, { name: "render.png" });
-          await message.channel.send({
-            embeds: [buildSubmissionEmbed(submission, ticket.creator_id)],
-            files: [file]
-          });
-        },
-        onError: async (error) => {
-          queries.updateUploadStatus.run("failed", error.message, attachment.id);
-          await message.channel.send(
-            `Rendering failed for \`${attachment.name}\`: ${error.message}`
-          );
-        }
-      });
-    } catch (error) {
-      logger.error("Upload handling failed", error);
-      await message.reply(`Upload failed: ${error.message}`);
-    }
-  }
-}
+          await message.channel.send
