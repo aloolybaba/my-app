@@ -50,6 +50,14 @@ export async function handleMessageCreate(message, renderQueue) {
   );
   if (litematics.length === 0) return;
 
+  const submission = queries.getSubmissionByTicket.get(ticket.id);
+  if (!submission?.schematic_name) {
+    await message.reply(
+      "Please click **Start Information** and save the schematic details before uploading a `.litematic`."
+    );
+    return;
+  }
+
   await fs.mkdir(uploadDir, { recursive: true });
   await fs.mkdir(renderDir, { recursive: true });
 
