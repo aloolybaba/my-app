@@ -16,6 +16,10 @@ import { logger } from "./logger.js";
 
 const cooldowns = new Map();
 
+function optionalField(interaction, id) {
+  return interaction.fields.getTextInputValue(id).trim();
+}
+
 function field(interaction, id) {
   return interaction.fields.getTextInputValue(id).trim();
 }
@@ -33,7 +37,7 @@ function isStaff(member) {
   return config.staffRoleIds.some((roleId) => member.roles.cache.has(roleId));
 }
 
-async function createTicketFromModal(interaction) {
+async function createTicket(interaction) {
   const now = Date.now();
   const last = cooldowns.get(interaction.user.id) || 0;
   if (now - last < config.ticketCooldownSeconds * 1000) {
@@ -99,11 +103,11 @@ async function createTicketFromModal(interaction) {
 
   queries.createSubmission.run(
     ticketId,
-    field(interaction, "schematicName"),
-    field(interaction, "designers"),
-    field(interaction, "credits"),
-    field(interaction, "rates"),
-    field(interaction, "stats"),
+    null,
+    null,
+    null,
+    null,
+    null,
     now,
     now
   );
@@ -117,7 +121,8 @@ async function createTicketFromModal(interaction) {
       [
         `Welcome ${interaction.user}.`,
         "",
-        "Fill out the remaining schematic information with **Add Extra Details**.",
+        "Click **Start Information** when you are ready to fill out schematic details.",
+        "Use **Add Extra Details** after that for positives, negatives, and instructions.",
         "Upload your `.litematic` file in this channel.",
         "The bot will parse the file, render an isometric preview, and generate the publish embed automatically."
       ].join("\n")
@@ -136,9 +141,58 @@ async function createTicketFromModal(interaction) {
   });
 }
 
+async function saveMainSubmission(interaction) {
+  const ticket = queries.getTicketByChannel.get(interaction.channelId);
+  if (!ticket) {
+    await interaction.reply({
+      content: "This modal can only be submitted inside a schematic ticket.",
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  if (interaction.user.id !== ticket.creator_id && !isStaff(interaction.member)) {
+    await interaction.reply({
+      content: "Only the ticket creator or staff can edit submission details.",
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  const now = Date.now();
+  const submission = queries.getSubmissionByTicket.get(ticket.id);
+  if (submission) {
+    queries.updateSubmissionMain.run(
+      field(interaction, "schematicName"),
+      optionalField(interaction, "designers"),
+      optionalField(interaction, "credits"),
+      optionalField(interaction, "rates"),
+      optionalField(interaction, "stats"),
+      now,
+      ticket.id
+    );
+  } else {
+    queries.createSubmission.run(
+      ticket.id,
+      field(interaction, "schematicName"),
+      optionalField(interaction, "designers"),
+      optionalField(interaction, "credits"),
+      optionalField(interaction, "rates"),
+      optionalField(interaction, "stats"),
+      now,
+      now
+    );
+  }
+
+  await interaction.reply({
+    content: "Schematic information saved. Use **Add Extra Details** for positives, negatives, and instructions.",
+    flags: MessageFlags.Ephemeral
+  });
+}
+
 async function handleButton(interaction, renderQueue) {
   if (interaction.customId === ids.startSubmission) {
-    await interaction.showModal(buildMainSubmissionModal());
+    await createTicket(interaction);
     return;
   }
 
@@ -195,7 +249,7 @@ async function handleButton(interaction, renderQueue) {
 
 async function handleModal(interaction) {
   if (interaction.customId === modalIds.submissionMain) {
-    await createTicketFromModal(interaction);
+    await saveMainSubmission(interaction);
     return;
   }
 
@@ -271,3 +325,14 @@ export async function handleInteraction(interaction, renderQueue) {
     }
   }
 }
+  if (interaction.customId === ids.information) {
+    if (interaction.user.id !== ticket.creator_id && !isStaff(interaction.member)) {
+      await interaction.reply({
+        content: "Only the ticket creator or staff can edit submission details.",
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+    await interaction.showModal(buildMainSubmissionModal());
+    return;
+  }
