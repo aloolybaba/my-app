@@ -24,7 +24,7 @@ const client = new Client({
 client.once(Events.ClientReady, async () => {
   try {
     logger.info("Bot online", { tag: client.user.tag });
-    await prepareResourcePack(config.textureRoot);
+    await prepareResourcePack(config.textureRoot, config.textureZipUrl);
     await registerGuildCommands();
   } catch (error) {
     logger.error("Startup task failed", error);
