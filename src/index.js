@@ -6,23 +6,26 @@ import { handleInteraction } from "./interactions.js";
 import { handleMessageCreate } from "./uploads.js";
 import { RenderQueue } from "./render/queue.js";
 import { registerGuildCommands } from "./commands.js";
+import { prepareResourcePack } from "./render/resourcePack.js";
 
 validateConfig();
 
 const renderQueue = new RenderQueue();
+const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages];
+
+if (config.useMessageContentIntent) {
+  intents.push(GatewayIntentBits.MessageContent);
+}
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ],
+  intents,
   partials: [Partials.Channel]
 });
 
 client.once(Events.ClientReady, async () => {
   try {
     logger.info("Bot online", { tag: client.user.tag });
+    await prepareResourcePack(config.textureRoot);
     await registerGuildCommands();
     await refreshPanel(client);
   } catch (error) {
