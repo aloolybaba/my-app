@@ -10,7 +10,7 @@ export const modalIds = {
   submissionDetails: "schematic:modal:details"
 };
 
-function input(id, label, style = TextInputStyle.Paragraph, required = true) {
+function input(id, label, style = TextInputStyle.Paragraph, required = false) {
   return new ActionRowBuilder().addComponents(
     new TextInputBuilder()
       .setCustomId(id)
