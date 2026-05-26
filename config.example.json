@@ -12,5 +12,6 @@
   "ticketCooldownSeconds": 60,
   "maxUploadBytes": 52428800,
   "useMessageContentIntent": true,
-  "textureRoot": "assets/resource-pack/assets/minecraft/textures/block"
+  "textureRoot": "assets/resource-pack/assets/minecraft/textures/block",
+  "textureZipUrl": "https://github.com/InventivetalentDev/minecraft-assets/archive/refs/heads/26.1.2.zip"
 }
