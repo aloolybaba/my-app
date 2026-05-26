@@ -26,6 +26,14 @@ export const config = {
     process.env.PANEL_CHANNEL_ID ||
     fileConfig.panelChannelId ||
     "1508792877701140521",
+  logsChannelId:
+    process.env.LOGS_CHANNEL_ID ||
+    fileConfig.logsChannelId ||
+    "1476586450861559808",
+  transcriptsChannelId:
+    process.env.TRANSCRIPTS_CHANNEL_ID ||
+    fileConfig.transcriptsChannelId ||
+    "1476586476182704291",
   staffRoleIds:
     csv(process.env.STAFF_ROLE_IDS).length > 0
       ? csv(process.env.STAFF_ROLE_IDS)
@@ -42,6 +50,12 @@ export const config = {
   maxUploadBytes: Number(
     process.env.MAX_UPLOAD_BYTES || fileConfig.maxUploadBytes || 50 * 1024 * 1024
   ),
+  useMessageContentIntent:
+    String(
+      process.env.USE_MESSAGE_CONTENT_INTENT ||
+        fileConfig.useMessageContentIntent ||
+        "false"
+    ).toLowerCase() === "true",
   textureRoot:
     process.env.TEXTURE_ROOT ||
     fileConfig.textureRoot ||
