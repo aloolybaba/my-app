@@ -1,4 +1,5 @@
 import {
+  AttachmentBuilder,
   ChannelType,
   EmbedBuilder,
   MessageFlags,
@@ -17,11 +18,7 @@ import { logger } from "./logger.js";
 const cooldowns = new Map();
 
 function optionalField(interaction, id) {
-  return interaction.fields.getTextInputValue(id).trim();
-}
-
-function field(interaction, id) {
-  return interaction.fields.getTextInputValue(id).trim();
+  return (interaction.fields.getTextInputValue(id) || "").trim();
 }
 
 function cleanChannelName(name) {
@@ -49,6 +46,97 @@ function ticketFromChannel(channel) {
     queries.createSubmission.run(ticket.id, null, null, null, null, null, now, now);
   }
   return ticket;
+}
+
+function formatBlock(text) {
+  return text?.trim() || "_Not provided_";
+}
+
+function buildSubmissionInfoEmbed(submission, creatorId) {
+  return new EmbedBuilder()
+    .setColor(brand.gold)
+    .setTitle(submission?.schematic_name || "Schematic Information")
+    .setDescription(
+      [
+        `**Designers**\n${formatBlock(submission?.designers || `<@${creatorId}>`)}`,
+        `**Credits**\n${formatBlock(submission?.credits)}`,
+        `**Rates**\n${formatBlock(submission?.rates)}`,
+        `**Stats**\n${formatBlock(submission?.stats)}`,
+        `**Positives**\n${formatBlock(submission?.positives)}`,
+        `**Negatives**\n${formatBlock(submission?.negatives)}`,
+        `**Instructions**\n${formatBlock(submission?.instructions)}`
+      ].join("\n\n")
+    )
+    .setFooter({ text: "Updates automatically when ticket information changes." })
+    .setTimestamp();
+}
+
+function buildRenderedSubmissionEmbed(submission, creatorId) {
+  return new EmbedBuilder()
+    .setColor(brand.gold)
+    .setTitle(submission?.schematic_name || "Schematic Submission")
+    .setDescription(
+      [
+        `**Designers**\n${formatBlock(submission?.designers || `<@${creatorId}>`)}`,
+        `**Credits**\n${formatBlock(submission?.credits)}`,
+        `**Rates**\n${formatBlock(submission?.rates)}`,
+        `**Stats**\n${formatBlock(submission?.stats)}`,
+        `**Positives**\n${formatBlock(submission?.positives)}`,
+        `**Negatives**\n${formatBlock(submission?.negatives)}`,
+        `**Instructions**\n${formatBlock(submission?.instructions)}`,
+        `**Size & Volume**\nSize: \`${submission?.width || 0} x ${submission?.height || 0} x ${submission?.length || 0}\`\nVolume: \`${submission?.non_air_volume || 0}/${submission?.bounding_volume || 0}\``
+      ].join("\n\n")
+    )
+    .setImage("attachment://render.png")
+    .setTimestamp();
+}
+
+async function upsertSubmissionInfoMessage(channel, ticket) {
+  const submission = queries.getSubmissionByTicket.get(ticket.id);
+  const payload = {
+    embeds: [buildSubmissionInfoEmbed(submission, ticket.creator_id)]
+  };
+  const key = `ticketInfoMessage:${ticket.id}`;
+  const saved = queries.getSetting.get(key)?.value;
+
+  if (saved) {
+    const existing = await channel.messages.fetch(saved).catch(() => null);
+    if (existing) {
+      await existing.edit(payload);
+      return existing;
+    }
+  }
+
+  const message = await channel.send(payload);
+  queries.setSetting.run(key, message.id);
+  return message;
+}
+
+async function updateRenderedSubmissionMessage(channel, ticket) {
+  const submission = queries.getSubmissionByTicket.get(ticket.id);
+  if (!submission?.render_path) return null;
+
+  const key = `renderMessage:${ticket.id}`;
+  const saved = queries.getSetting.get(key)?.value;
+  if (!saved) return null;
+
+  const message = await channel.messages.fetch(saved).catch(() => null);
+  if (!message) return null;
+
+  try {
+    const file = new AttachmentBuilder(submission.render_path, { name: "render.png" });
+    await message.edit({
+      embeds: [buildRenderedSubmissionEmbed(submission, ticket.creator_id)],
+      files: [file]
+    });
+    return message;
+  } catch (error) {
+    logger.warn("Rendered submission message could not be refreshed", {
+      ticketId: ticket.id,
+      error: error.message
+    });
+    return null;
+  }
 }
 
 async function createTicket(interaction) {
@@ -184,7 +272,7 @@ async function saveMainSubmission(interaction) {
   const submission = queries.getSubmissionByTicket.get(ticket.id);
   if (submission) {
     queries.updateSubmissionMain.run(
-      field(interaction, "schematicName"),
+      optionalField(interaction, "schematicName"),
       optionalField(interaction, "designers"),
       optionalField(interaction, "credits"),
       optionalField(interaction, "rates"),
@@ -195,7 +283,7 @@ async function saveMainSubmission(interaction) {
   } else {
     queries.createSubmission.run(
       ticket.id,
-      field(interaction, "schematicName"),
+      optionalField(interaction, "schematicName"),
       optionalField(interaction, "designers"),
       optionalField(interaction, "credits"),
       optionalField(interaction, "rates"),
@@ -205,6 +293,8 @@ async function saveMainSubmission(interaction) {
     );
   }
 
+  await upsertSubmissionInfoMessage(interaction.channel, ticket);
+  await updateRenderedSubmissionMessage(interaction.channel, ticket);
   await interaction.reply({
     content: "Schematic information saved. Use **Add Extra Details** for positives, negatives, and instructions.",
     flags: MessageFlags.Ephemeral
@@ -217,7 +307,7 @@ async function handleButton(interaction, renderQueue) {
     return;
   }
 
-  const ticket = queries.getTicketByChannel.get(interaction.channelId);
+  const ticket = ticketFromChannel(interaction.channel);
   if (!ticket) {
     await interaction.reply({
       content: "This button only works inside a schematic ticket.",
@@ -288,13 +378,30 @@ async function handleModal(interaction) {
 
   if (interaction.customId.startsWith(`${modalIds.submissionDetails}:`)) {
     const ticketId = Number(interaction.customId.split(":").at(-1));
+    const ticket = ticketFromChannel(interaction.channel);
+    if (!ticket || ticket.id !== ticketId) {
+      await interaction.reply({
+        content: "This modal can only be submitted inside its ticket.",
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+    if (interaction.user.id !== ticket.creator_id && !isStaff(interaction.member)) {
+      await interaction.reply({
+        content: "Only the ticket creator or staff can edit submission details.",
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
     queries.updateSubmissionDetails.run(
-      field(interaction, "positives"),
-      field(interaction, "negatives"),
-      field(interaction, "instructions"),
+      optionalField(interaction, "positives"),
+      optionalField(interaction, "negatives"),
+      optionalField(interaction, "instructions"),
       Date.now(),
       ticketId
     );
+    await upsertSubmissionInfoMessage(interaction.channel, ticket);
+    await updateRenderedSubmissionMessage(interaction.channel, ticket);
     await interaction.reply({
       content: "Extra schematic details saved.",
       flags: MessageFlags.Ephemeral
