@@ -40,6 +40,10 @@ export const queries = {
       created_at, updated_at
     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`
   ),
+  updateSubmissionMain: db.prepare(
+    `UPDATE submissions SET schematic_name = ?, designers = ?, credits = ?,
+      rates = ?, stats = ?, updated_at = ? WHERE ticket_id = ?`
+  ),
   updateSubmissionDetails: db.prepare(
     `UPDATE submissions SET positives = ?, negatives = ?, instructions = ?,
       updated_at = ? WHERE ticket_id = ?`
