@@ -6,7 +6,7 @@ import {
 } from "discord.js";
 import { config } from "./config.js";
 import { queries } from "./database/db.js";
-import { ids, buildTicketControls, refreshPanel } from "./panel.js";
+import { brand, ids, buildTicketControls, refreshPanel } from "./panel.js";
 import {
   buildDetailsSubmissionModal,
   buildMainSubmissionModal,
@@ -37,6 +37,20 @@ function isStaff(member) {
   return config.staffRoleIds.some((roleId) => member.roles.cache.has(roleId));
 }
 
+function ticketFromChannel(channel) {
+  const saved = queries.getTicketByChannel.get(channel.id);
+  if (saved) return saved;
+  const match = channel.topic?.match(/\((\d{17,22})\)/);
+  if (!match || !channel.name?.startsWith("schematic-")) return null;
+  const now = Date.now();
+  queries.createTicket.run(channel.guild.id, channel.id, match[1], now);
+  const ticket = queries.getTicketByChannel.get(channel.id);
+  if (ticket && !queries.getSubmissionByTicket.get(ticket.id)) {
+    queries.createSubmission.run(ticket.id, null, null, null, null, null, now, now);
+  }
+  return ticket;
+}
+
 async function createTicket(interaction) {
   const now = Date.now();
   const last = cooldowns.get(interaction.user.id) || 0;
@@ -50,11 +64,18 @@ async function createTicket(interaction) {
 
   const existing = queries.getOpenTicketByCreator.get(interaction.user.id);
   if (existing) {
+    const existingChannel = await interaction.guild.channels
+      .fetch(existing.channel_id)
+      .catch(() => null);
+    if (!existingChannel) {
+      queries.closeTicket.run(Date.now(), existing.channel_id);
+    } else {
     await interaction.reply({
       content: `You already have an open ticket: <#${existing.channel_id}>`,
       flags: MessageFlags.Ephemeral
     });
     return;
+    }
   }
 
   const guild = interaction.guild;
@@ -115,7 +136,7 @@ async function createTicket(interaction) {
   cooldowns.set(interaction.user.id, now);
 
   const embed = new EmbedBuilder()
-    .setColor(0x2ecc71)
+    .setColor(brand.gold)
     .setTitle("Schematic Submission")
     .setDescription(
       [
@@ -142,7 +163,7 @@ async function createTicket(interaction) {
 }
 
 async function saveMainSubmission(interaction) {
-  const ticket = queries.getTicketByChannel.get(interaction.channelId);
+  const ticket = ticketFromChannel(interaction.channel);
   if (!ticket) {
     await interaction.reply({
       content: "This modal can only be submitted inside a schematic ticket.",
@@ -292,7 +313,7 @@ async function handleCommand(interaction, renderQueue) {
   }
 
   if (interaction.commandName === "ticket-close") {
-    const ticket = queries.getTicketByChannel.get(interaction.channelId);
+    const ticket = ticketFromChannel(interaction.channel);
     if (!ticket) {
       await interaction.reply({
         content: "This is not a schematic ticket channel.",
@@ -314,26 +335,4 @@ async function handleCommand(interaction, renderQueue) {
   }
 }
 
-export async function handleInteraction(interaction, renderQueue) {
-  try {
-    if (interaction.isButton()) return await handleButton(interaction, renderQueue);
-    if (interaction.isModalSubmit()) return await handleModal(interaction);
-    if (interaction.isChatInputCommand()) {
-      return await handleCommand(interaction, renderQueue);
-    }
-  } catch (error) {
-    logger.error("Interaction failed", error, {
-      customId: interaction.customId,
-      commandName: interaction.commandName
-    });
-    const payload = {
-      content: "Something went wrong. Staff have been notified in the logs.",
-      flags: MessageFlags.Ephemeral
-    };
-    if (interaction.deferred || interaction.replied) {
-      await interaction.followUp(payload).catch(() => {});
-    } else {
-      await interaction.reply(payload).catch(() => {});
-    }
-  }
-}
+export async function handleInteraction(inter
