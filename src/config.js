@@ -39,6 +39,12 @@ export const config = {
       ? csv(process.env.STAFF_ROLE_IDS)
       : fileConfig.staffRoleIds || [],
   categoryId: process.env.CATEGORY_ID || fileConfig.categoryId || null,
+  createTicketCategories:
+    String(
+      process.env.CREATE_TICKET_CATEGORIES ||
+        fileConfig.createTicketCategories ||
+        "true"
+    ).toLowerCase() === "true",
   minecraftVersion:
     process.env.MINECRAFT_VERSION || fileConfig.minecraftVersion || "1.20.4",
   maxConcurrentRenderJobs: Number(
