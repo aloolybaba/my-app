@@ -1,6 +1,5 @@
 import { Client, Events, GatewayIntentBits, Partials } from "discord.js";
 import { config, validateConfig } from "./config.js";
-import { migrate } from "./database/db.js";
 import { logger } from "./logger.js";
 import { refreshPanel } from "./panel.js";
 import { handleInteraction } from "./interactions.js";
@@ -9,7 +8,6 @@ import { RenderQueue } from "./render/queue.js";
 import { registerGuildCommands } from "./commands.js";
 
 validateConfig();
-migrate();
 
 const renderQueue = new RenderQueue();
 
