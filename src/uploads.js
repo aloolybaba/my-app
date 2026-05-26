@@ -69,12 +69,8 @@ export async function handleMessageCreate(message, renderQueue) {
   );
   if (litematics.length === 0) return;
 
-  const submission = queries.getSubmissionByTicket.get(ticket.id);
-  if (!submission?.schematic_name) {
-    await message.reply(
-      "Please click **Start Information** and save the schematic details before uploading a `.litematic`."
-    );
-    return;
+  if (!queries.getSubmissionByTicket.get(ticket.id)) {
+    queries.createSubmission.run(ticket.id, null, null, null, null, null, Date.now(), Date.now());
   }
 
   await fs.mkdir(uploadDir, { recursive: true });
@@ -113,7 +109,7 @@ export async function handleMessageCreate(message, renderQueue) {
       await message.reply("`.litematic` received. Rendering preview now...");
       await sendLog(
         message,
-        `📥 Rendering queued in <#${message.channelId}> for ${message.author}: \`${attachment.name}\``
+        `Rendering queued in <#${message.channelId}> for ${message.author}: \`${attachment.name}\``
       );
 
       renderQueue.enqueue({
@@ -137,13 +133,14 @@ export async function handleMessageCreate(message, renderQueue) {
 
           const submission = queries.getSubmissionByTicket.get(ticket.id);
           const file = new AttachmentBuilder(outputPath, { name: "render.png" });
-          await message.channel.send({
+          const renderMessage = await message.channel.send({
             embeds: [buildSubmissionEmbed(submission, ticket.creator_id)],
             files: [file]
           });
+          queries.setSetting.run(`renderMessage:${ticket.id}`, renderMessage.id);
           await sendLog(
             message,
-            `✅ Render complete in <#${message.channelId}> for \`${attachment.name}\``
+            `Render complete in <#${message.channelId}> for \`${attachment.name}\``
           );
         },
         onError: async (error) => {
@@ -153,7 +150,7 @@ export async function handleMessageCreate(message, renderQueue) {
           );
           await sendLog(
             message,
-            `❌ Render failed in <#${message.channelId}> for \`${attachment.name}\`: ${error.message}`
+            `Render failed in <#${message.channelId}> for \`${attachment.name}\`: ${error.message}`
           );
         }
       });
