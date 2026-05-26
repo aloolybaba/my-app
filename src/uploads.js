@@ -9,6 +9,11 @@ import { brand } from "./panel.js";
 
 const uploadDir = path.join(process.cwd(), "data", "uploads");
 const renderDir = path.join(process.cwd(), "data", "renders");
+const renderJobFooterPrefix = "render-job:";
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function download(url) {
   const res = await fetch(url);
@@ -63,6 +68,47 @@ function attachmentLabel(attachment) {
   return attachment.name || attachment.url || attachment.id || "unknown attachment";
 }
 
+function oldestMessage(messages) {
+  return [...messages.values()].sort((left, right) => {
+    const timeDiff = left.createdTimestamp - right.createdTimestamp;
+    if (timeDiff !== 0) return timeDiff;
+    return BigInt(left.id) > BigInt(right.id) ? 1 : -1;
+  })[0];
+}
+
+async function findRenderJobMessages(channel, attachmentId) {
+  const footerText = `${renderJobFooterPrefix}${attachmentId}`;
+  const recent = await channel.messages.fetch({ limit: 100 });
+  return recent.filter((message) => {
+    const embed = message.embeds?.[0];
+    return (
+      message.author.id === channel.client.user.id &&
+      embed?.footer?.text === footerText
+    );
+  });
+}
+
+async function claimRenderJob(message, attachment) {
+  const marker = await message.channel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(brand.gold)
+        .setTitle("Rendering Preview")
+        .setDescription(`Queued \`${attachment.name || "schematic.litematic"}\`.`)
+        .setFooter({ text: `${renderJobFooterPrefix}${attachment.id}` })
+        .setTimestamp()
+    ]
+  });
+
+  await delay(1250);
+  const markers = await findRenderJobMessages(message.channel, attachment.id);
+  const keep = oldestMessage(markers);
+  const stale = markers.filter((item) => item.id !== keep?.id);
+  await Promise.all(stale.map((item) => item.delete().catch(() => {})));
+
+  return keep?.id === marker.id ? marker : null;
+}
+
 export async function handleMessageCreate(message, renderQueue) {
   if (message.author.bot || !message.guild) return;
 
@@ -111,11 +157,29 @@ export async function handleMessageCreate(message, renderQueue) {
     }
 
     try {
+      const marker = await claimRenderJob(message, attachment);
+      if (!marker) {
+        logger.info("Skipped duplicate render handler", {
+          channelId: message.channelId,
+          attachmentId: attachment.id
+        });
+        continue;
+      }
+
       const buffer = await download(attachment.url);
       const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
       const duplicate = queries.getUploadByHash.get(ticket.id, sha256);
       if (duplicate) {
-        await message.reply("That `.litematic` was already uploaded in this ticket.");
+        await marker.edit({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(brand.darkGold)
+              .setTitle("Duplicate Upload")
+              .setDescription("That `.litematic` was already uploaded in this ticket.")
+              .setFooter({ text: `${renderJobFooterPrefix}${attachment.id}` })
+              .setTimestamp()
+          ]
+        });
         continue;
       }
 
@@ -134,7 +198,16 @@ export async function handleMessageCreate(message, renderQueue) {
         Date.now()
       );
 
-      await message.reply("`.litematic` received. Rendering preview now...");
+      await marker.edit({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(brand.gold)
+            .setTitle("Rendering Preview")
+            .setDescription(`Rendering \`${attachment.name || "schematic.litematic"}\` now...`)
+            .setFooter({ text: `${renderJobFooterPrefix}${attachment.id}` })
+            .setTimestamp()
+        ]
+      });
       await sendLog(
         message,
         `Rendering queued in <#${message.channelId}> for ${message.author}: \`${attachment.name}\``
@@ -161,7 +234,7 @@ export async function handleMessageCreate(message, renderQueue) {
 
           const submission = queries.getSubmissionByTicket.get(ticket.id);
           const file = new AttachmentBuilder(outputPath, { name: "render.png" });
-          const renderMessage = await message.channel.send({
+          const renderMessage = await marker.edit({
             embeds: [buildSubmissionEmbed(submission, ticket.creator_id)],
             files: [file]
           });
@@ -173,9 +246,16 @@ export async function handleMessageCreate(message, renderQueue) {
         },
         onError: async (error) => {
           queries.updateUploadStatus.run("failed", error.message, attachment.id);
-          await message.channel.send(
-            `Rendering failed for \`${attachment.name}\`: ${error.message}`
-          );
+          await marker.edit({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(brand.danger)
+                .setTitle("Rendering Failed")
+                .setDescription(`Rendering failed for \`${attachment.name}\`:\n${error.message}`)
+                .setFooter({ text: `${renderJobFooterPrefix}${attachment.id}` })
+                .setTimestamp()
+            ]
+          });
           await sendLog(
             message,
             `Render failed in <#${message.channelId}> for \`${attachment.name}\`: ${error.message}`
