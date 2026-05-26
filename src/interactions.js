@@ -335,4 +335,26 @@ async function handleCommand(interaction, renderQueue) {
   }
 }
 
-export async function handleInteraction(inter
+export async function handleInteraction(interaction, renderQueue) {
+  try {
+    if (interaction.isButton()) return await handleButton(interaction, renderQueue);
+    if (interaction.isModalSubmit()) return await handleModal(interaction);
+    if (interaction.isChatInputCommand()) {
+      return await handleCommand(interaction, renderQueue);
+    }
+  } catch (error) {
+    logger.error("Interaction failed", error, {
+      customId: interaction.customId,
+      commandName: interaction.commandName
+    });
+    const payload = {
+      content: "Something went wrong. Staff have been notified in the logs.",
+      flags: MessageFlags.Ephemeral
+    };
+    if (interaction.deferred || interaction.replied) {
+      await interaction.followUp(payload).catch(() => {});
+    } else {
+      await interaction.reply(payload).catch(() => {});
+    }
+  }
+}
