@@ -64,6 +64,30 @@ function drawTexturedFace(ctx, texture, points, shadeAmount) {
   ctx.stroke();
 }
 
+function drawShadow(ctx, blocks, ox, oy) {
+  const ground = new Set(blocks.map((block) => `${block.rx},${block.rz}`));
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.16)";
+  ctx.filter = "blur(2px)";
+  for (const key of ground) {
+    const [x, z] = key.split(",").map(Number);
+    const p0 = iso(x, 0, z);
+    const p1 = iso(x + 1, 0, z);
+    const p2 = iso(x + 1, 0, z + 1);
+    const p3 = iso(x, 0, z + 1);
+    const points = [p0, p1, p2, p3].map((point) => ({
+      x: point.x + ox + 8,
+      y: point.y + oy + 12
+    }));
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (const point of points.slice(1)) ctx.lineTo(point.x, point.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function blockFaces(x, y, z, ox, oy) {
   const p000 = iso(x, y, z);
   const p100 = iso(x + 1, y, z);
@@ -115,13 +139,21 @@ export async function renderIsometric(schematic, options) {
       rz: block.z - bounds.minZ
     }))
     .sort((a, b) => a.rx + a.rz + a.ry - (b.rx + b.rz + b.ry));
+  const occupied = new Set(
+    normalized.map((block) => `${block.rx},${block.ry},${block.rz}`)
+  );
+
+  drawShadow(ctx, normalized, ox, oy);
 
   for (const block of normalized) {
     const texture = await textures.get(block.name);
     const faces = blockFaces(block.rx, block.ry, block.rz, ox, oy);
-    drawTexturedFace(ctx, texture, faces.left, FACE_SHADE.left);
-    drawTexturedFace(ctx, texture, faces.right, FACE_SHADE.right);
-    drawTexturedFace(ctx, texture, faces.top, FACE_SHADE.top);
+    const hasAbove = occupied.has(`${block.rx},${block.ry + 1},${block.rz}`);
+    const hasLeftNeighbor = occupied.has(`${block.rx},${block.ry},${block.rz + 1}`);
+    const hasRightNeighbor = occupied.has(`${block.rx + 1},${block.ry},${block.rz}`);
+    if (!hasLeftNeighbor) drawTexturedFace(ctx, texture, faces.left, FACE_SHADE.left);
+    if (!hasRightNeighbor) drawTexturedFace(ctx, texture, faces.right, FACE_SHADE.right);
+    if (!hasAbove) drawTexturedFace(ctx, texture, faces.top, FACE_SHADE.top);
   }
 
   const rawPng = canvas.toBuffer("image/png");
