@@ -54,7 +54,7 @@ export const config = {
     String(
       process.env.USE_MESSAGE_CONTENT_INTENT ||
         fileConfig.useMessageContentIntent ||
-        "false"
+        "true"
     ).toLowerCase() === "true",
   textureRoot:
     process.env.TEXTURE_ROOT ||
