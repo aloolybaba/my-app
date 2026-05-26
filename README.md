@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/28262121/README.md)
 # Publish Schematic Discord Bot
 
 A Node.js + discord.js v14 ticket bot for schematic submissions. It creates a professional publish panel, private ticket channels, two-step modals for submission metadata, SQLite storage, `.litematic` upload detection, duplicate upload prevention, and a worker-thread isometric renderer.
@@ -52,6 +51,14 @@ Recommended bot permissions:
 - Use Slash Commands
 - Manage Messages
 
+For full `.litematic` upload detection, enable **Message Content Intent** in Discord Developer Portal -> your app -> **Bot**, then set this Railway variable:
+
+```txt
+USE_MESSAGE_CONTENT_INTENT=true
+```
+
+The bot defaults this to `false` so it can start before that privileged intent is enabled.
+
 ## Minecraft Textures
 
 The renderer supports real Minecraft/resource-pack block textures. Put PNG files here:
@@ -59,6 +66,14 @@ The renderer supports real Minecraft/resource-pack block textures. Put PNG files
 ```txt
 assets/resource-pack/assets/minecraft/textures/block
 ```
+
+If GitHub has trouble with thousands of PNG files, upload the zip as:
+
+```txt
+assets/resource-pack/assets/minecraft/textures/block.zip
+```
+
+The bot extracts `block.zip` automatically on startup.
 
 For example:
 
