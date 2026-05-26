@@ -22,6 +22,46 @@ async function hasPngFiles(dir) {
   }
 }
 
+async function findPngDirectory(dir, depth = 0) {
+  if (depth > 8) return null;
+  let entries;
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  if (entries.some((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".png"))) {
+    return dir;
+  }
+
+  const preferred = entries
+    .filter((entry) => entry.isDirectory())
+    .sort((left, right) => {
+      const leftScore = left.name === "block" || left.name === "textures" ? -1 : 0;
+      const rightScore = right.name === "block" || right.name === "textures" ? -1 : 0;
+      return leftScore - rightScore;
+    });
+
+  for (const entry of preferred) {
+    const found = await findPngDirectory(path.join(dir, entry.name), depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function flattenPngDirectory(sourceDir, targetDir) {
+  if (path.resolve(sourceDir) === path.resolve(targetDir)) return;
+  const entries = await fsp.readdir(sourceDir);
+  await Promise.all(
+    entries
+      .filter((entry) => entry.toLowerCase().endsWith(".png"))
+      .map((entry) =>
+        fsp.copyFile(path.join(sourceDir, entry), path.join(targetDir, entry))
+      )
+  );
+}
+
 export async function prepareResourcePack(textureRoot) {
   const targetDir = path.resolve(process.cwd(), textureRoot);
   if (await hasPngFiles(targetDir)) {
@@ -43,15 +83,19 @@ export async function prepareResourcePack(textureRoot) {
   await fsp.mkdir(targetDir, { recursive: true });
   await extract(zipPath, { dir: targetDir });
 
-  const nestedBlockDir = path.join(targetDir, "block");
-  if (fs.existsSync(nestedBlockDir) && !(await hasPngFiles(targetDir))) {
-    const entries = await fsp.readdir(nestedBlockDir);
-    await Promise.all(
-      entries.map((entry) =>
-        fsp.rename(path.join(nestedBlockDir, entry), path.join(targetDir, entry))
-      )
-    );
-    await fsp.rm(nestedBlockDir, { recursive: true, force: true });
+  if (!(await hasPngFiles(targetDir))) {
+    const pngDir = await findPngDirectory(targetDir);
+    if (pngDir) {
+      await flattenPngDirectory(pngDir, targetDir);
+    }
+  }
+
+  if (!(await hasPngFiles(targetDir))) {
+    logger.warn("Texture zip was found, but no PNG block textures were inside it.", {
+      zipPath,
+      targetDir
+    });
+    return;
   }
 
   logger.info("Extracted block texture zip", { zipPath, targetDir });
