@@ -126,4 +126,21 @@ export async function handleMessageCreate(message, renderQueue) {
 
           const submission = queries.getSubmissionByTicket.get(ticket.id);
           const file = new AttachmentBuilder(outputPath, { name: "render.png" });
-          await message.channel.send
+          await message.channel.send({
+            embeds: [buildSubmissionEmbed(submission, ticket.creator_id)],
+            files: [file]
+          });
+        },
+        onError: async (error) => {
+          queries.updateUploadStatus.run("failed", error.message, attachment.id);
+          await message.channel.send(
+            `Rendering failed for \`${attachment.name}\`: ${error.message}`
+          );
+        }
+      });
+    } catch (error) {
+      logger.error("Upload handling failed", error);
+      await message.reply(`Upload failed: ${error.message}`);
+    }
+  }
+}
