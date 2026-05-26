@@ -47,6 +47,22 @@ async function sendLog(message, content) {
   await channel.send(content).catch(() => {});
 }
 
+function attachmentLooksLikeLitematic(attachment) {
+  const values = [
+    attachment.name,
+    attachment.url,
+    attachment.proxyURL,
+    attachment.contentType
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+  return values.some((value) => value.includes(".litematic"));
+}
+
+function attachmentLabel(attachment) {
+  return attachment.name || attachment.url || attachment.id || "unknown attachment";
+}
+
 export async function handleMessageCreate(message, renderQueue) {
   if (message.author.bot || !message.guild) return;
 
@@ -55,7 +71,7 @@ export async function handleMessageCreate(message, renderQueue) {
     const match = message.channel.topic?.match(/\((\d{17,22})\)/);
     if (match) {
       const now = Date.now();
-      queries.createTicket.run(message.guild.id, message.channelId, match[1], now);
+      queries.createTicketOrIgnore.run(message.guild.id, message.channelId, match[1], now);
       ticket = queries.getTicketByChannel.get(message.channelId);
       if (ticket && !queries.getSubmissionByTicket.get(ticket.id)) {
         queries.createSubmission.run(ticket.id, null, null, null, null, null, now, now);
@@ -64,10 +80,22 @@ export async function handleMessageCreate(message, renderQueue) {
   }
   if (!ticket || ticket.status !== "open") return;
 
-  const litematics = [...message.attachments.values()].filter((attachment) =>
-    attachment.name?.toLowerCase().endsWith(".litematic")
-  );
-  if (litematics.length === 0) return;
+  const attachments = [...message.attachments.values()];
+  const litematics = attachments.filter(attachmentLooksLikeLitematic);
+  if (litematics.length === 0) {
+    if (attachments.length > 0) {
+      await message.reply(
+        "I saw your upload, but it was not detected as a `.litematic` file. Please make sure the filename ends with `.litematic`."
+      );
+      await sendLog(
+        message,
+        `Attachment ignored in <#${message.channelId}>: ${attachments
+          .map(attachmentLabel)
+          .join(", ")}`
+      );
+    }
+    return;
+  }
 
   if (!queries.getSubmissionByTicket.get(ticket.id)) {
     queries.createSubmission.run(ticket.id, null, null, null, null, null, Date.now(), Date.now());
