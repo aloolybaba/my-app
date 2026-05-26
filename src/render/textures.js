@@ -27,11 +27,24 @@ function baseName(blockName) {
     .replace(/^potted_/, "");
 }
 
-function colorCanvas(color) {
+function colorCanvas(color, key) {
   const canvas = createCanvas(16, 16);
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, 16, 16);
+  const seed = [...key].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const n = (x * 17 + y * 31 + seed * 13) % 23;
+      if (n < 7) {
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        ctx.fillRect(x, y, 1, 1);
+      } else if (n > 18) {
+        ctx.fillStyle = "rgba(0,0,0,0.10)";
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
   return canvas;
 }
 
@@ -61,7 +74,7 @@ export class TextureManager {
     }
 
     const color = fallbackColors[key] || fallbackColors[blockName] || "#a97854";
-    const canvas = colorCanvas(color);
+    const canvas = colorCanvas(color, key);
     this.cache.set(key, canvas);
     return canvas;
   }
