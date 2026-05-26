@@ -40,7 +40,7 @@ function ticketFromChannel(channel) {
   const match = channel.topic?.match(/\((\d{17,22})\)/);
   if (!match || !channel.name?.startsWith("schematic-")) return null;
   const now = Date.now();
-  queries.createTicket.run(channel.guild.id, channel.id, match[1], now);
+  queries.createTicketOrIgnore.run(channel.guild.id, channel.id, match[1], now);
   const ticket = queries.getTicketByChannel.get(channel.id);
   if (ticket && !queries.getSubmissionByTicket.get(ticket.id)) {
     queries.createSubmission.run(ticket.id, null, null, null, null, null, now, now);
@@ -91,6 +91,34 @@ function buildRenderedSubmissionEmbed(submission, creatorId) {
     .setTimestamp();
 }
 
+function newestMessage(messages) {
+  return [...messages.values()].sort((left, right) => {
+    const timeDiff = right.createdTimestamp - left.createdTimestamp;
+    if (timeDiff !== 0) return timeDiff;
+    return BigInt(right.id) > BigInt(left.id) ? 1 : -1;
+  })[0];
+}
+
+async function findSubmissionInfoMessages(channel) {
+  const recent = await channel.messages.fetch({ limit: 100 });
+  return recent.filter((message) => {
+    const embed = message.embeds?.[0];
+    return (
+      message.author.id === channel.client.user.id &&
+      embed?.footer?.text === "Updates automatically when ticket information changes."
+    );
+  });
+}
+
+async function cleanupSubmissionInfoMessages(channel) {
+  const messages = await findSubmissionInfoMessages(channel);
+  if (messages.size === 0) return null;
+  const keep = newestMessage(messages);
+  const stale = messages.filter((message) => message.id !== keep.id);
+  await Promise.all(stale.map((message) => message.delete().catch(() => {})));
+  return keep;
+}
+
 async function upsertSubmissionInfoMessage(channel, ticket) {
   const submission = queries.getSubmissionByTicket.get(ticket.id);
   const payload = {
@@ -98,17 +126,34 @@ async function upsertSubmissionInfoMessage(channel, ticket) {
   };
   const key = `ticketInfoMessage:${ticket.id}`;
   const saved = queries.getSetting.get(key)?.value;
+  let existing = null;
 
   if (saved) {
-    const existing = await channel.messages.fetch(saved).catch(() => null);
-    if (existing) {
-      await existing.edit(payload);
-      return existing;
-    }
+    existing = await channel.messages.fetch(saved).catch(() => null);
+  }
+
+  if (!existing) {
+    existing = await cleanupSubmissionInfoMessages(channel);
+  }
+
+  if (existing) {
+    await existing.edit(payload);
+    queries.setSetting.run(key, existing.id);
+    setTimeout(() => {
+      cleanupSubmissionInfoMessages(channel).catch((error) =>
+        logger.warn("Delayed submission info cleanup failed", { error: error.message })
+      );
+    }, 2500);
+    return existing;
   }
 
   const message = await channel.send(payload);
   queries.setSetting.run(key, message.id);
+  setTimeout(() => {
+    cleanupSubmissionInfoMessages(channel).catch((error) =>
+      logger.warn("Delayed submission info cleanup failed", { error: error.message })
+    );
+  }, 2500);
   return message;
 }
 
