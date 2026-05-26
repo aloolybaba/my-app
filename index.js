@@ -6,8 +6,8 @@ import {
   SlashCommandBuilder
 } from "discord.js";
 
-const token = process.env.MTUwODc4Njk0NjM2Mzg4NzY0Nw.GJnJB4.WT_KT-xujP8pXYeZk9xaMdf26lid_gKUlwxsXE;
-const clientId = process.env.1508786946363887647;
+const token = process.env.DISCORD_TOKEN;
+const clientId = process.env.DISCORD_CLIENT_ID;
 
 if (!token) {
   throw new Error("Missing DISCORD_TOKEN");
