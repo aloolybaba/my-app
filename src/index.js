@@ -1,7 +1,6 @@
 import { Client, Events, GatewayIntentBits, Partials } from "discord.js";
 import { config, validateConfig } from "./config.js";
 import { logger } from "./logger.js";
-import { refreshPanel } from "./panel.js";
 import { handleInteraction } from "./interactions.js";
 import { handleMessageCreate } from "./uploads.js";
 import { RenderQueue } from "./render/queue.js";
@@ -27,7 +26,6 @@ client.once(Events.ClientReady, async () => {
     logger.info("Bot online", { tag: client.user.tag });
     await prepareResourcePack(config.textureRoot);
     await registerGuildCommands();
-    await refreshPanel(client);
   } catch (error) {
     logger.error("Startup task failed", error);
     process.exit(1);
