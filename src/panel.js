@@ -10,6 +10,7 @@ import { logger } from "./logger.js";
 
 export const ids = {
   startSubmission: "schematic:start",
+  information: "schematic:information",
   closeTicket: "schematic:close",
   claimTicket: "schematic:claim",
   detailsContinue: "schematic:details"
@@ -61,9 +62,13 @@ export async function refreshPanel(client) {
 export function buildTicketControls() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
+      .setCustomId(ids.information)
+      .setLabel("Start Information")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
       .setCustomId(ids.detailsContinue)
       .setLabel("Add Extra Details")
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(ids.claimTicket)
       .setLabel("Claim")
