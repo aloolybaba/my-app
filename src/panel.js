@@ -50,29 +50,37 @@ async function findPanelMessages(channel, client, limit = 100) {
   });
 }
 
-async function cleanupDuplicatePanels(channel, client, keepId) {
+function newestMessage(messages) {
+  return [...messages.values()].sort(
+    (left, right) => {
+      const timeDiff = right.createdTimestamp - left.createdTimestamp;
+      if (timeDiff !== 0) return timeDiff;
+      return BigInt(right.id) > BigInt(left.id) ? 1 : -1;
+    }
+  )[0];
+}
+
+async function cleanupDuplicatePanels(channel, client) {
   const panels = await findPanelMessages(channel, client);
-  const stale = panels.filter((message) => message.id !== keepId);
+  if (panels.size === 0) return { keep: null, removed: 0 };
+  const keep = newestMessage(panels);
+  const stale = panels.filter((message) => message.id !== keep.id);
   await Promise.all(stale.map((message) => message.delete().catch(() => {})));
-  return stale.size;
+  return { keep, removed: stale.size };
 }
 
 export async function refreshPanel(client) {
   const channel = await client.channels.fetch(config.panelChannelId);
   const payload = buildPanel();
-  const saved = queries.getSetting.get("panelMessageId")?.value;
   const panels = await findPanelMessages(channel, client);
 
   if (panels.size > 0) {
-    const sorted = [...panels.values()].sort(
-      (left, right) => right.createdTimestamp - left.createdTimestamp
-    );
-    const newest = sorted.find((message) => message.id === saved) || sorted[0];
+    const newest = newestMessage(panels);
     await newest.edit(payload);
     queries.setSetting.run("panelMessageId", newest.id);
-    const removed = await cleanupDuplicatePanels(channel, client, newest.id);
+    const { removed } = await cleanupDuplicatePanels(channel, client);
     setTimeout(() => {
-      cleanupDuplicatePanels(channel, client, newest.id).catch((error) =>
+      cleanupDuplicatePanels(channel, client).catch((error) =>
         logger.warn("Delayed panel cleanup failed", { error: error.message })
       );
     }, 2500);
@@ -83,7 +91,7 @@ export async function refreshPanel(client) {
   const message = await channel.send(payload);
   queries.setSetting.run("panelMessageId", message.id);
   setTimeout(() => {
-    cleanupDuplicatePanels(channel, client, message.id).catch((error) =>
+    cleanupDuplicatePanels(channel, client).catch((error) =>
       logger.warn("Delayed panel cleanup failed", { error: error.message })
     );
   }, 2500);
