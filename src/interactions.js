@@ -205,6 +205,18 @@ async function handleButton(interaction, renderQueue) {
     return;
   }
 
+  if (interaction.customId === ids.information) {
+    if (interaction.user.id !== ticket.creator_id && !isStaff(interaction.member)) {
+      await interaction.reply({
+        content: "Only the ticket creator or staff can edit submission details.",
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+    await interaction.showModal(buildMainSubmissionModal());
+    return;
+  }
+
   if (interaction.customId === ids.detailsContinue) {
     if (interaction.user.id !== ticket.creator_id && !isStaff(interaction.member)) {
       await interaction.reply({
@@ -325,14 +337,3 @@ export async function handleInteraction(interaction, renderQueue) {
     }
   }
 }
-  if (interaction.customId === ids.information) {
-    if (interaction.user.id !== ticket.creator_id && !isStaff(interaction.member)) {
-      await interaction.reply({
-        content: "Only the ticket creator or staff can edit submission details.",
-        flags: MessageFlags.Ephemeral
-      });
-      return;
-    }
-    await interaction.showModal(buildMainSubmissionModal());
-    return;
-  }
