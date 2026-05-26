@@ -1,0 +1,23 @@
+{
+  "name": "publish-schematic-bot",
+  "version": "1.0.0",
+  "description": "A production-ready Discord schematic publishing ticket bot.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "commands": "node src/deployCommands.js",
+    "db:init": "node src/database/init.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "canvas": "^3.1.2",
+    "discord.js": "^14.19.3",
+    "minecraft-data": "^3.90.0",
+    "prismarine-nbt": "^2.7.0",
+    "sharp": "^0.34.2"
+  }
+}

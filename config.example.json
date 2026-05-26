@@ -1,0 +1,12 @@
+{
+  "token": "PUT_TOKEN_IN_RAILWAY_VARIABLE_DISCORD_TOKEN_INSTEAD",
+  "guildId": "YOUR_GUILD_ID",
+  "panelChannelId": "1508792877701140521",
+  "staffRoleIds": ["STAFF_ROLE_ID_1"],
+  "categoryId": "OPTIONAL_TICKET_CATEGORY_ID",
+  "minecraftVersion": "1.20.4",
+  "maxConcurrentRenderJobs": 2,
+  "ticketCooldownSeconds": 60,
+  "maxUploadBytes": 52428800,
+  "textureRoot": "assets/resource-pack/assets/minecraft/textures/block"
+}
