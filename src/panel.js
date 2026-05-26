@@ -1,4 +1,4 @@
-import {
+  import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -46,30 +46,22 @@ export async function refreshPanel(client) {
   const channel = await client.channels.fetch(config.panelChannelId);
   const payload = buildPanel();
   const saved = queries.getSetting.get("panelMessageId")?.value;
-
-  if (saved) {
-    try {
-      const message = await channel.messages.fetch(saved);
-      await message.edit(payload);
-      logger.info("Panel refreshed", { messageId: message.id });
-      return message;
-    } catch {
-      logger.warn("Saved panel message not found, sending a new one.");
-    }
-  }
-
   const recent = await channel.messages.fetch({ limit: 50 });
-  const duplicates = recent.filter((message) => {
+  const panels = recent.filter((message) => {
     const embed = message.embeds?.[0];
     return message.author.id === client.user.id && embed?.title === "Publish Schematic";
   });
-  if (duplicates.size > 0) {
-    const newest = duplicates.first();
+
+  if (panels.size > 0) {
+    const sorted = [...panels.values()].sort(
+      (left, right) => right.createdTimestamp - left.createdTimestamp
+    );
+    const newest = sorted.find((message) => message.id === saved) || sorted[0];
     await newest.edit(payload);
     queries.setSetting.run("panelMessageId", newest.id);
-    const stale = duplicates.filter((message) => message.id !== newest.id);
+    const stale = panels.filter((message) => message.id !== newest.id);
     await Promise.all(stale.map((message) => message.delete().catch(() => {})));
-    logger.info("Panel deduplicated", { messageId: newest.id, removed: stale.size });
+    logger.info("Panel refreshed", { messageId: newest.id, removed: stale.size });
     return newest;
   }
 
