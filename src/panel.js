@@ -74,4 +74,30 @@ export async function refreshPanel(client) {
     return newest;
   }
 
-  const message = await channel.send(payloa
+  const message = await channel.send(payload);
+  queries.setSetting.run("panelMessageId", message.id);
+  logger.info("Panel sent", { messageId: message.id });
+  return message;
+}
+
+export function buildTicketControls() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(ids.information)
+      .setLabel("Start Information")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(ids.detailsContinue)
+      .setLabel("Add Extra Details")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(ids.claimTicket)
+      .setLabel("Claim")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(ids.closeTicket)
+      .setLabel("Close Ticket")
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
