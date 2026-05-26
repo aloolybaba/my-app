@@ -34,6 +34,67 @@ function isStaff(member) {
   return config.staffRoleIds.some((roleId) => member.roles.cache.has(roleId));
 }
 
+function buildTicketOverwrites(guild, creatorId) {
+  return [
+    {
+      id: guild.roles.everyone.id,
+      deny: [PermissionFlagsBits.ViewChannel]
+    },
+    {
+      id: creatorId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.ReadMessageHistory
+      ]
+    },
+    ...config.staffRoleIds.map((roleId) => ({
+      id: roleId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageMessages
+      ]
+    }))
+  ];
+}
+
+async function findOpenTicketChannel(guild, creatorId) {
+  const channels = await guild.channels.fetch();
+  return channels.find(
+    (channel) =>
+      channel?.type === ChannelType.GuildText &&
+      channel.name?.startsWith("schematic-") &&
+      channel.topic?.includes(`(${creatorId})`)
+  );
+}
+
+async function createTicketCategory(guild, creator, overwrites) {
+  if (!config.createTicketCategories) return null;
+  return guild.channels.create({
+    name: `schematic-ticket-${cleanChannelName(creator.username)}`,
+    type: ChannelType.GuildCategory,
+    permissionOverwrites: overwrites,
+    reason: `Schematic ticket category for ${creator.tag}`
+  });
+}
+
+async function deleteTicketChannelAndCategory(channel) {
+  const parent = channel.parent;
+  await channel.delete("Ticket closed").catch(() => {});
+  if (
+    config.createTicketCategories &&
+    parent?.type === ChannelType.GuildCategory &&
+    parent.name?.startsWith("schematic-ticket-") &&
+    parent.children.cache.size === 0
+  ) {
+    await parent.delete("Ticket category closed").catch(() => {});
+  }
+}
+
 function ticketFromChannel(channel) {
   const saved = queries.getTicketByChannel.get(channel.id);
   if (saved) return saved;
@@ -212,37 +273,23 @@ async function createTicket(interaction) {
   }
 
   const guild = interaction.guild;
+  const existingDiscordChannel = await findOpenTicketChannel(guild, interaction.user.id);
+  if (existingDiscordChannel) {
+    await interaction.reply({
+      content: `You already have an open ticket: <#${existingDiscordChannel.id}>`,
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
   const channelName = `schematic-${cleanChannelName(interaction.user.username)}`;
-  const overwrites = [
-    {
-      id: guild.roles.everyone.id,
-      deny: [PermissionFlagsBits.ViewChannel]
-    },
-    {
-      id: interaction.user.id,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.ReadMessageHistory
-      ]
-    },
-    ...config.staffRoleIds.map((roleId) => ({
-      id: roleId,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.ManageMessages
-      ]
-    }))
-  ];
+  const overwrites = buildTicketOverwrites(guild, interaction.user.id);
+  const category = await createTicketCategory(guild, interaction.user, overwrites);
 
   const channel = await guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
-    parent: config.categoryId || undefined,
+    parent: category?.id || config.categoryId || undefined,
     permissionOverwrites: overwrites,
     topic: `Schematic ticket for ${interaction.user.tag} (${interaction.user.id})`
   });
@@ -408,7 +455,7 @@ async function handleButton(interaction, renderQueue) {
     }
     queries.closeTicket.run(Date.now(), interaction.channelId);
     await interaction.reply("Ticket closed. This channel will be deleted in 10 seconds.");
-    setTimeout(() => interaction.channel.delete("Ticket closed").catch(() => {}), 10000);
+    setTimeout(() => deleteTicketChannelAndCategory(interaction.channel), 10000);
     return;
   }
 
@@ -475,7 +522,7 @@ async function handleCommand(interaction, renderQueue) {
     }
     queries.closeTicket.run(Date.now(), interaction.channelId);
     await interaction.reply("Ticket closed. This channel will be deleted in 10 seconds.");
-    setTimeout(() => interaction.channel.delete("Ticket closed").catch(() => {}), 10000);
+    setTimeout(() => deleteTicketChannelAndCategory(interaction.channel), 10000);
     return;
   }
 
