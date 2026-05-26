@@ -14,6 +14,8 @@ export function migrate() {
   db.exec(schema);
 }
 
+migrate();
+
 export const queries = {
   getSetting: db.prepare("SELECT value FROM settings WHERE key = ?"),
   setSetting: db.prepare(
