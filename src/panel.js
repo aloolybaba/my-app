@@ -36,7 +36,6 @@ export function buildPanel() {
     new ButtonBuilder()
       .setCustomId(ids.startSubmission)
       .setLabel("Start Submission")
-      .setEmoji("??")
       .setStyle(ButtonStyle.Primary)
   );
 
