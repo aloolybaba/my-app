@@ -24,6 +24,9 @@ export const queries = {
   createTicket: db.prepare(
     "INSERT INTO tickets(guild_id, channel_id, creator_id, created_at) VALUES(?, ?, ?, ?)"
   ),
+  createTicketOrIgnore: db.prepare(
+    "INSERT OR IGNORE INTO tickets(guild_id, channel_id, creator_id, created_at) VALUES(?, ?, ?, ?)"
+  ),
   getTicketByChannel: db.prepare("SELECT * FROM tickets WHERE channel_id = ?"),
   getOpenTicketByCreator: db.prepare(
     "SELECT * FROM tickets WHERE creator_id = ? AND status = 'open'"
