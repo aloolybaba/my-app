@@ -78,6 +78,7 @@ assets/resource-pack/assets/minecraft/textures/block.zip
 ```
 
 The bot extracts `block.zip` automatically on startup.
+If no local texture files or `block.zip` are present, the bot downloads the configured `TEXTURE_ZIP_URL` once at startup and extracts the block textures automatically.
 
 For example:
 
