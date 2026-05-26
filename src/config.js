@@ -65,7 +65,11 @@ export const config = {
   textureRoot:
     process.env.TEXTURE_ROOT ||
     fileConfig.textureRoot ||
-    "assets/resource-pack/assets/minecraft/textures/block"
+    "assets/resource-pack/assets/minecraft/textures/block",
+  textureZipUrl:
+    process.env.TEXTURE_ZIP_URL ||
+    fileConfig.textureZipUrl ||
+    "https://github.com/InventivetalentDev/minecraft-assets/archive/refs/heads/26.1.2.zip"
 };
 
 export function validateConfig() {
