@@ -41,8 +41,17 @@ export class RenderQueue {
 
     this.active.set(job.attachmentId, worker);
     logger.info("Render job started", { attachmentId: job.attachmentId });
+    const timeout = setTimeout(async () => {
+      this.active.delete(job.attachmentId);
+      await worker.terminate().catch(() => {});
+      await job.onError(new Error("Render timed out after 10 minutes.")).catch((handlerError) => {
+        logger.error("Render timeout handler failed", handlerError);
+      });
+      this.pump();
+    }, 10 * 60 * 1000);
 
     worker.once("message", async (message) => {
+      clearTimeout(timeout);
       this.active.delete(job.attachmentId);
       if (message.ok) {
         await job.onDone(message.result).catch((error) => {
@@ -57,6 +66,7 @@ export class RenderQueue {
     });
 
     worker.once("error", async (error) => {
+      clearTimeout(timeout);
       this.active.delete(job.attachmentId);
       await job.onError(error).catch((handlerError) => {
         logger.error("Render worker error handler failed", handlerError);
