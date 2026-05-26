@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/28269996/README.md)
 # Publish Schematic Discord Bot
 
 A Node.js + discord.js v14 ticket bot for schematic submissions. It creates a professional publish panel, private ticket channels, two-step modals for submission metadata, SQLite storage, `.litematic` upload detection, duplicate upload prevention, and a worker-thread isometric renderer.
@@ -90,6 +91,8 @@ If a texture is missing, the renderer falls back to a material color so the job 
 - `/panel-refresh` - refreshes the Publish Schematic panel
 - `/ticket-close` - closes the current ticket
 - `/render-status` - shows render queue status
+
+The bot does not post the panel automatically on deploy. Run `/panel-refresh` in Discord when you want to create or refresh the panel.
 
 ## Files
 
