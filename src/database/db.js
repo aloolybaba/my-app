@@ -63,4 +63,8 @@ export const queries = {
     `INSERT INTO uploads(ticket_id, message_id, attachment_id, file_name, sha256, status, created_at)
       VALUES(?, ?, ?, ?, ?, ?, ?)`
   ),
-  getUploadByHash: db.prepare("SELECT * FROM uploads WHERE tick
+  getUploadByHash: db.prepare("SELECT * FROM uploads WHERE ticket_id = ? AND sha256 = ?"),
+  updateUploadStatus: db.prepare(
+    "UPDATE uploads SET status = ?, error = ? WHERE attachment_id = ?"
+  )
+};
