@@ -2,15 +2,22 @@ import fs from "node:fs/promises";
 import nbt from "prismarine-nbt";
 
 function unwrapLong(value) {
-  if (typeof value === "bigint") return value;
-  if (typeof value === "number") return BigInt(value);
-  if (Array.isArray(value)) return (BigInt(value[0]) << 32n) | BigInt(value[1] >>> 0);
+  if (typeof value === "bigint") return BigInt.asUintN(64, value);
+  if (typeof value === "number") return BigInt.asUintN(64, BigInt(value));
+  if (Array.isArray(value)) {
+    return (BigInt(value[0] >>> 0) << 32n) | BigInt(value[1] >>> 0);
+  }
   if (value && typeof value === "object" && "value" in value) return unwrapLong(value.value);
-  return BigInt(value || 0);
+  return BigInt.asUintN(64, BigInt(value || 0));
 }
 
-function signedDimension(value) {
-  return Math.abs(Number(value));
+function dimensionInfo(value) {
+  const signed = Number(value);
+  const direction = signed < 0 ? -1 : 1;
+  return {
+    size: Math.abs(signed),
+    direction
+  };
 }
 
 function getPackedPaletteIndex(longs, index, bitsPerEntry) {
@@ -50,9 +57,12 @@ export async function parseLitematic(filePath) {
   for (const region of Object.values(regions)) {
     const size = region.Size || region.size;
     const pos = region.Position || region.position || { x: 0, y: 0, z: 0 };
-    const width = signedDimension(size.x);
-    const height = signedDimension(size.y);
-    const length = signedDimension(size.z);
+    const xDim = dimensionInfo(size.x);
+    const yDim = dimensionInfo(size.y);
+    const zDim = dimensionInfo(size.z);
+    const width = xDim.size;
+    const height = yDim.size;
+    const length = zDim.size;
     const originX = Number(pos.x || 0);
     const originY = Number(pos.y || 0);
     const originZ = Number(pos.z || 0);
@@ -69,13 +79,13 @@ export async function parseLitematic(filePath) {
       const name = normalizeBlockName(blockState.Name || blockState.name);
       if (name === "air" || name === "cave_air" || name === "void_air") continue;
 
-      const x = i % width;
-      const z = Math.floor(i / width) % length;
-      const y = Math.floor(i / (width * length));
+      const localX = i % width;
+      const localZ = Math.floor(i / width) % length;
+      const localY = Math.floor(i / (width * length));
       const block = {
-        x: originX + x,
-        y: originY + y,
-        z: originZ + z,
+        x: originX + localX * xDim.direction,
+        y: originY + localY * yDim.direction,
+        z: originZ + localZ * zDim.direction,
         name,
         properties: blockState.Properties || blockState.properties || {}
       };
