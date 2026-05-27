@@ -6,10 +6,14 @@ import { TextureManager } from "./textures.js";
 const TILE_W = 32;
 const TILE_H = 16;
 const BLOCK_H = 28;
+const OUTPUT_WIDTH = 1280;
+const OUTPUT_HEIGHT = 768;
+const FIT_WIDTH = 980;
+const FIT_HEIGHT = 660;
 const FACE_SHADE = {
-  top: 1.12,
-  left: 0.72,
-  right: 0.9
+  top: 1.08,
+  left: 0.7,
+  right: 0.88
 };
 
 function iso(x, y, z) {
@@ -66,12 +70,23 @@ function drawTexturedFace(ctx, texture, points, shadeAmount, alpha = 1) {
 
   shade(ctx, points, shadeAmount);
   ctx.strokeStyle = "rgba(0,0,0,0.26)";
-  ctx.lineWidth = 0.55;
+  ctx.lineWidth = 0.35;
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);
   for (const point of points.slice(1)) ctx.lineTo(point.x, point.y);
   ctx.closePath();
   ctx.stroke();
+}
+
+function topTextureFor(block, faces) {
+  return block.properties?.facing === "up" ? faces.front : faces.top;
+}
+
+function sideTextureFor(block, faces, visibleFace) {
+  const facing = block.properties?.facing;
+  if (visibleFace === "left" && facing === "south") return faces.front;
+  if (visibleFace === "right" && facing === "north") return faces.front;
+  return faces.side;
 }
 
 function shapeFor(block) {
@@ -183,8 +198,7 @@ function blockFaces(block, shape, ox, oy) {
 function drawShadow(ctx, blocks, ox, oy) {
   const ground = new Set(blocks.map((block) => `${block.rx},${block.rz}`));
   ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.18)";
-  ctx.filter = "blur(2px)";
+  ctx.fillStyle = "rgba(0,0,0,0.1)";
   for (const key of ground) {
     const [x, z] = key.split(",").map(Number);
     const points = [
@@ -264,30 +278,48 @@ export async function renderIsometric(schematic, options) {
     const hasRightNeighbor = solidOccupied.has(`${block.rx + 1},${block.ry},${block.rz}`);
 
     if (!shape.topOnly && (!shape.fullCube || !hasLeftNeighbor)) {
-      drawTexturedFace(ctx, faces.side, geometry.left, FACE_SHADE.left, shape.alpha);
+      drawTexturedFace(
+        ctx,
+        sideTextureFor(block, faces, "left"),
+        geometry.left,
+        FACE_SHADE.left,
+        shape.alpha
+      );
     }
     if (!shape.topOnly && (!shape.fullCube || !hasRightNeighbor)) {
-      drawTexturedFace(ctx, faces.front, geometry.right, FACE_SHADE.right, shape.alpha);
+      drawTexturedFace(
+        ctx,
+        sideTextureFor(block, faces, "right"),
+        geometry.right,
+        FACE_SHADE.right,
+        shape.alpha
+      );
     }
     if (!shape.fullCube || !hasAbove) {
-      drawTexturedFace(ctx, faces.top, geometry.top, FACE_SHADE.top, shape.alpha);
+      drawTexturedFace(ctx, topTextureFor(block, faces), geometry.top, FACE_SHADE.top, shape.alpha);
     }
   }
 
   const rawPng = canvas.toBuffer("image/png");
-  const finalPng = await sharp(rawPng)
+  const trimmedPng = await sharp(rawPng)
     .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 1 })
-    .extend({
-      top: 64,
-      bottom: 64,
-      left: 64,
-      right: 64,
-      background: { r: 0, g: 0, b: 0, alpha: 0 }
-    })
     .resize({
-      width: Math.min(1800, canvas.width * 2),
+      width: FIT_WIDTH,
+      height: FIT_HEIGHT,
+      fit: "inside",
       kernel: sharp.kernel.nearest,
       withoutEnlargement: false
+    })
+    .png()
+    .toBuffer();
+  const metadata = await sharp(trimmedPng).metadata();
+  const finalPng = await sharp(trimmedPng)
+    .extend({
+      top: Math.max(0, Math.floor((OUTPUT_HEIGHT - metadata.height) / 2)),
+      bottom: Math.max(0, Math.ceil((OUTPUT_HEIGHT - metadata.height) / 2)),
+      left: Math.max(0, Math.floor((OUTPUT_WIDTH - metadata.width) / 2)),
+      right: Math.max(0, Math.ceil((OUTPUT_WIDTH - metadata.width) / 2)),
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
     })
     .png({ quality: 100, compressionLevel: 9 })
     .toBuffer();
