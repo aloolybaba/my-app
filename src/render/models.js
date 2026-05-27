@@ -14,32 +14,6 @@ const cutoutNames = [
   "pressure_plate"
 ];
 
-const preferredModelBlocks = new Set([
-  "hopper",
-  "observer",
-  "dispenser",
-  "dropper",
-  "piston",
-  "sticky_piston",
-  "repeater",
-  "comparator",
-  "redstone_wire",
-  "iron_bars"
-]);
-
-function shouldPreferModel(blockName) {
-  return (
-    preferredModelBlocks.has(blockName) ||
-    blockName.endsWith("_glass_pane") ||
-    blockName.endsWith("_trapdoor") ||
-    blockName.endsWith("_fence") ||
-    blockName.endsWith("_wall") ||
-    blockName.endsWith("_button") ||
-    blockName.endsWith("_pressure_plate") ||
-    blockName.endsWith("_rail")
-  );
-}
-
 function stripNamespace(value) {
   return String(value || "").replace(/^minecraft:/, "");
 }
@@ -150,29 +124,6 @@ function rotateBox(from, to, xRotation = 0, yRotation = 0) {
   };
 }
 
-function rotateBoxY(from, to, y = 0) {
-  const x0 = from[0] / 16;
-  const y0 = from[1] / 16;
-  const z0 = from[2] / 16;
-  const x1 = to[0] / 16;
-  const y1 = to[1] / 16;
-  const z1 = to[2] / 16;
-  const rotated = [
-    rotatePointY(x0, z0, y),
-    rotatePointY(x0, z1, y),
-    rotatePointY(x1, z0, y),
-    rotatePointY(x1, z1, y)
-  ];
-  return {
-    xOffset: Math.min(...rotated.map((point) => point.x)),
-    yOffset: Math.min(y0, y1),
-    zOffset: Math.min(...rotated.map((point) => point.z)),
-    width: Math.max(...rotated.map((point) => point.x)) - Math.min(...rotated.map((point) => point.x)),
-    height: Math.max(y0, y1) - Math.min(y0, y1),
-    length: Math.max(...rotated.map((point) => point.z)) - Math.min(...rotated.map((point) => point.z))
-  };
-}
-
 function textureValue(value) {
   if (!value) return null;
   if (typeof value === "string") return value;
@@ -196,6 +147,12 @@ function modelFileName(modelRef) {
 function isCutout(blockName, textureRef) {
   const value = `${blockName} ${textureRef || ""}`.toLowerCase();
   return cutoutNames.some((name) => value.includes(name));
+}
+
+function alphaForBlock(blockName) {
+  if (blockName.includes("glass") || blockName === "water") return 0.68;
+  if (blockName === "slime_block" || blockName === "honey_block") return 0.82;
+  return 1;
 }
 
 export class BlockModelManager {
@@ -286,17 +243,23 @@ export class BlockModelManager {
       if (!application?.model) continue;
       const model = await this.loadModel(application.model);
       if (!model?.elements?.length) continue;
+      const xRotation = Number(application.x || 0);
       const yRotation = Number(application.y || 0);
 
       for (const element of model.elements) {
-        const box = rotateBoxY(element.from || [0, 0, 0], element.to || [16, 16, 16], yRotation);
+        const box = rotateBox(
+          element.from || [0, 0, 0],
+          element.to || [16, 16, 16],
+          xRotation,
+          yRotation
+        );
         const textures = {};
         const tints = {};
         const decorate = element.shade !== false;
         const faces = element.faces || {};
 
         for (const [faceName, face] of Object.entries(faces)) {
-          const rotatedFace = rotateFaceY(faceName, yRotation);
+          const rotatedFace = rotateFace(faceName, xRotation, yRotation);
           if (!visibleFaces.has(rotatedFace)) continue;
           textures[rotatedFace] = resolveTexture(face.texture, model.textures || {});
           if (face.tintindex !== undefined) tints[rotatedFace] = face.tintindex;
@@ -313,7 +276,7 @@ export class BlockModelManager {
             box.height === 1 &&
             box.length === 1,
           topOnly: false,
-          alpha: block.name.includes("glass") || block.name === "water" ? 0.68 : 1,
+          alpha: alphaForBlock(block.name),
           decorate,
           cutout: Object.values(textures).some((texture) => isCutout(block.name, texture)),
           textures,
@@ -322,15 +285,6 @@ export class BlockModelManager {
       }
     }
 
-    if (output.length === 0) return null;
-    if (
-      !shouldPreferModel(block.name) &&
-      output.length === 1 &&
-      output[0].fullCube &&
-      !output[0].cutout
-    ) {
-      return null;
-    }
-    return output;
+    return output.length > 0 ? output : null;
   }
 }
