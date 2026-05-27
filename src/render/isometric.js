@@ -9,8 +9,8 @@ const TILE_H = 16;
 const BLOCK_H = 28;
 const OUTPUT_WIDTH = 1280;
 const OUTPUT_HEIGHT = 768;
-const FIT_WIDTH = 760;
-const FIT_HEIGHT = 610;
+const MAX_RENDER_WIDTH = 900;
+const MAX_RENDER_HEIGHT = 640;
 const FACE_SHADE = {
   top: 1.06,
   left: 0.78,
@@ -481,6 +481,12 @@ function projectedBounds(size) {
   };
 }
 
+function integerScaleFor(width, height) {
+  const widthScale = Math.floor(MAX_RENDER_WIDTH / Math.max(1, width));
+  const heightScale = Math.floor(MAX_RENDER_HEIGHT / Math.max(1, height));
+  return Math.max(1, Math.min(widthScale, heightScale));
+}
+
 export async function renderIsometric(schematic, options) {
   const textures = new TextureManager(options.textureRoot);
   const models = new BlockModelManager(options.textureRoot);
@@ -585,22 +591,30 @@ export async function renderIsometric(schematic, options) {
   const rawPng = canvas.toBuffer("image/png");
   const trimmedPng = await sharp(rawPng)
     .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 1 })
-    .resize({
-      width: FIT_WIDTH,
-      height: FIT_HEIGHT,
-      fit: "inside",
-      kernel: sharp.kernel.nearest,
-      withoutEnlargement: false
-    })
     .png()
     .toBuffer();
-  const metadata = await sharp(trimmedPng).metadata();
-  const finalPng = await sharp(trimmedPng)
+  const trimmedMetadata = await sharp(trimmedPng).metadata();
+  const scale = integerScaleFor(trimmedMetadata.width, trimmedMetadata.height);
+  const scaledWidth = trimmedMetadata.width * scale;
+  const scaledHeight = trimmedMetadata.height * scale;
+  const scaledPng =
+    scale > 1
+      ? await sharp(trimmedPng)
+          .resize({
+            width: scaledWidth,
+            height: scaledHeight,
+            kernel: sharp.kernel.nearest,
+            fit: "fill"
+          })
+          .png()
+          .toBuffer()
+      : trimmedPng;
+  const finalPng = await sharp(scaledPng)
     .extend({
-      top: Math.max(0, Math.floor((OUTPUT_HEIGHT - metadata.height) / 2)),
-      bottom: Math.max(0, Math.ceil((OUTPUT_HEIGHT - metadata.height) / 2)),
-      left: Math.max(0, Math.floor((OUTPUT_WIDTH - metadata.width) / 2)),
-      right: Math.max(0, Math.ceil((OUTPUT_WIDTH - metadata.width) / 2)),
+      top: Math.max(0, Math.floor((OUTPUT_HEIGHT - scaledHeight) / 2)),
+      bottom: Math.max(0, Math.ceil((OUTPUT_HEIGHT - scaledHeight) / 2)),
+      left: Math.max(0, Math.floor((OUTPUT_WIDTH - scaledWidth) / 2)),
+      right: Math.max(0, Math.ceil((OUTPUT_WIDTH - scaledWidth) / 2)),
       background: { r: 0, g: 0, b: 0, alpha: 0 }
     })
     .png({ quality: 100, compressionLevel: 9 })
