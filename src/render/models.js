@@ -52,12 +52,35 @@ function variantMatches(properties, key) {
   });
 }
 
-function rotateFaceY(face, y = 0) {
-  const turns = ((((Number(y) || 0) % 360) + 360) % 360) / 90;
-  const order = ["north", "east", "south", "west"];
+function quarterTurns(value = 0) {
+  return Math.round(((((Number(value) || 0) % 360) + 360) % 360) / 90) % 4;
+}
+
+function rotateFaceInOrder(face, value, order) {
+  const turns = quarterTurns(value);
   const index = order.indexOf(face);
   if (index === -1) return face;
   return order[(index + turns) % 4];
+}
+
+function rotateFaceX(face, x = 0) {
+  return rotateFaceInOrder(face, x, ["north", "down", "south", "up"]);
+}
+
+function rotateFaceY(face, y = 0) {
+  return rotateFaceInOrder(face, y, ["north", "east", "south", "west"]);
+}
+
+function rotateFace(face, x = 0, y = 0) {
+  return rotateFaceY(rotateFaceX(face, x), y);
+}
+
+function rotatePointX(x, y, z, rotation = 0) {
+  const normalized = (((Number(rotation) || 0) % 360) + 360) % 360;
+  if (normalized === 90) return { x, y: z, z: 1 - y };
+  if (normalized === 180) return { x, y: 1 - y, z: 1 - z };
+  if (normalized === 270) return { x, y: 1 - z, z: y };
+  return { x, y, z };
 }
 
 function rotatePointY(x, z, y = 0) {
@@ -68,7 +91,13 @@ function rotatePointY(x, z, y = 0) {
   return { x, z };
 }
 
-function rotateBoxY(from, to, y = 0) {
+function rotatePoint(point, xRotation = 0, yRotation = 0) {
+  const afterX = rotatePointX(point.x, point.y, point.z, xRotation);
+  const afterY = rotatePointY(afterX.x, afterX.z, yRotation);
+  return { x: afterY.x, y: afterX.y, z: afterY.z };
+}
+
+function rotateBox(from, to, xRotation = 0, yRotation = 0) {
   const x0 = from[0] / 16;
   const y0 = from[1] / 16;
   const z0 = from[2] / 16;
@@ -76,17 +105,21 @@ function rotateBoxY(from, to, y = 0) {
   const y1 = to[1] / 16;
   const z1 = to[2] / 16;
   const rotated = [
-    rotatePointY(x0, z0, y),
-    rotatePointY(x0, z1, y),
-    rotatePointY(x1, z0, y),
-    rotatePointY(x1, z1, y)
+    rotatePoint({ x: x0, y: y0, z: z0 }, xRotation, yRotation),
+    rotatePoint({ x: x0, y: y0, z: z1 }, xRotation, yRotation),
+    rotatePoint({ x: x0, y: y1, z: z0 }, xRotation, yRotation),
+    rotatePoint({ x: x0, y: y1, z: z1 }, xRotation, yRotation),
+    rotatePoint({ x: x1, y: y0, z: z0 }, xRotation, yRotation),
+    rotatePoint({ x: x1, y: y0, z: z1 }, xRotation, yRotation),
+    rotatePoint({ x: x1, y: y1, z: z0 }, xRotation, yRotation),
+    rotatePoint({ x: x1, y: y1, z: z1 }, xRotation, yRotation)
   ];
   return {
     xOffset: Math.min(...rotated.map((point) => point.x)),
-    yOffset: Math.min(y0, y1),
+    yOffset: Math.min(...rotated.map((point) => point.y)),
     zOffset: Math.min(...rotated.map((point) => point.z)),
     width: Math.max(...rotated.map((point) => point.x)) - Math.min(...rotated.map((point) => point.x)),
-    height: Math.max(y0, y1) - Math.min(y0, y1),
+    height: Math.max(...rotated.map((point) => point.y)) - Math.min(...rotated.map((point) => point.y)),
     length: Math.max(...rotated.map((point) => point.z)) - Math.min(...rotated.map((point) => point.z))
   };
 }
@@ -204,17 +237,23 @@ export class BlockModelManager {
       if (!application?.model) continue;
       const model = await this.loadModel(application.model);
       if (!model?.elements?.length) continue;
+      const xRotation = Number(application.x || 0);
       const yRotation = Number(application.y || 0);
 
       for (const element of model.elements) {
-        const box = rotateBoxY(element.from || [0, 0, 0], element.to || [16, 16, 16], yRotation);
+        const box = rotateBox(
+          element.from || [0, 0, 0],
+          element.to || [16, 16, 16],
+          xRotation,
+          yRotation
+        );
         const textures = {};
         const tints = {};
         const decorate = element.shade !== false;
         const faces = element.faces || {};
 
         for (const [faceName, face] of Object.entries(faces)) {
-          const rotatedFace = rotateFaceY(faceName, yRotation);
+          const rotatedFace = rotateFace(faceName, xRotation, yRotation);
           if (!visibleFaces.has(rotatedFace)) continue;
           textures[rotatedFace] = resolveTexture(face.texture, model.textures || {});
           if (face.tintindex !== undefined) tints[rotatedFace] = face.tintindex;
