@@ -105,6 +105,16 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function textureFileName(textureRef) {
+  const raw =
+    typeof textureRef === "object"
+      ? textureRef?.sprite || textureRef?.texture
+      : textureRef;
+  if (!raw) return null;
+  const clean = String(raw).replace(/^minecraft:/, "").replace(/^block\//, "");
+  return `${clean}.png`;
+}
+
 export class TextureManager {
   constructor(textureRoot) {
     this.textureRoot = path.resolve(process.cwd(), textureRoot);
@@ -126,6 +136,15 @@ export class TextureManager {
     const canvas = colorCanvas(color, fallbackKey);
     this.cache.set(cacheKey, canvas);
     return canvas;
+  }
+
+  async loadTextureRef(textureRef, fallbackKey = "stone") {
+    const fileName = textureFileName(textureRef);
+    return this.loadTexture(
+      `texture:${fileName || fallbackKey}`,
+      fileName ? [fileName] : [],
+      fallbackKey
+    );
   }
 
   faceCandidates(blockName, face) {
