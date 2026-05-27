@@ -105,6 +105,20 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function tintCanvas(image, color) {
+  const canvas = createCanvas(image.width || 16, image.height || 16);
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = "source-atop";
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.9;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+  return canvas;
+}
+
 function textureFileName(textureRef) {
   const raw =
     typeof textureRef === "object"
@@ -143,14 +157,24 @@ export class TextureManager {
     return canvas;
   }
 
-  async loadTextureRef(textureRef, fallbackKey = "stone") {
+  async loadTextureRef(textureRef, fallbackKey = "stone", options = {}) {
     const fileName = textureFileName(textureRef);
     const base = fileName ? path.basename(fileName) : null;
-    return this.loadTexture(
+    const tint = options.tint ? "#c11212" : null;
+    const cacheKey = `texture:${fileName || fallbackKey}:${tint || "plain"}`;
+    if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
+
+    const image = await this.loadTexture(
       `texture:${fileName || fallbackKey}`,
       fileName ? unique([fileName, base, "missing.png"]) : ["missing.png"],
       fallbackKey
     );
+
+    if (!tint) return image;
+
+    const tinted = tintCanvas(image, tint);
+    this.cache.set(cacheKey, tinted);
+    return tinted;
   }
 
   faceCandidates(blockName, face) {
