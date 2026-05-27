@@ -308,7 +308,20 @@ export async function prepareResourcePack(textureRoot, textureZipUrl) {
     }
 
     if (await hasPngFiles(targetDir)) {
-      logger.info("Extracted block texture zip", { zipPath, targetDir });
+      try {
+        await downloadGithubRenderAssets(targetDir, textureZipUrl);
+      } catch (error) {
+        logger.warn("Minecraft model/blockstate download failed after texture zip extraction.", {
+          error: error.message,
+          targetDir
+        });
+      }
+      logger.info("Extracted block texture zip", {
+        zipPath,
+        targetDir,
+        textureCount: await countPngFiles(targetDir),
+        modelsReady: await hasModelFiles(textureRoot)
+      });
       return;
     }
 
@@ -355,7 +368,19 @@ export async function prepareResourcePack(textureRoot, textureZipUrl) {
   }
 
   if (await hasPngFiles(targetDir)) {
-    logger.info("Texture folder ready", { targetDir });
+    try {
+      await downloadGithubRenderAssets(targetDir, textureZipUrl);
+    } catch (error) {
+      logger.warn("Minecraft model/blockstate download failed after texture zip download.", {
+        error: error.message,
+        targetDir
+      });
+    }
+    logger.info("Texture folder ready", {
+      targetDir,
+      textureCount: await countPngFiles(targetDir),
+      modelsReady: await hasModelFiles(textureRoot)
+    });
     return;
   }
 
