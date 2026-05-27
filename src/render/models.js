@@ -14,6 +14,32 @@ const cutoutNames = [
   "pressure_plate"
 ];
 
+const preferredModelBlocks = new Set([
+  "hopper",
+  "observer",
+  "dispenser",
+  "dropper",
+  "piston",
+  "sticky_piston",
+  "repeater",
+  "comparator",
+  "redstone_wire",
+  "iron_bars"
+]);
+
+function shouldPreferModel(blockName) {
+  return (
+    preferredModelBlocks.has(blockName) ||
+    blockName.endsWith("_glass_pane") ||
+    blockName.endsWith("_trapdoor") ||
+    blockName.endsWith("_fence") ||
+    blockName.endsWith("_wall") ||
+    blockName.endsWith("_button") ||
+    blockName.endsWith("_pressure_plate") ||
+    blockName.endsWith("_rail")
+  );
+}
+
 function stripNamespace(value) {
   return String(value || "").replace(/^minecraft:/, "");
 }
@@ -120,6 +146,29 @@ function rotateBox(from, to, xRotation = 0, yRotation = 0) {
     zOffset: Math.min(...rotated.map((point) => point.z)),
     width: Math.max(...rotated.map((point) => point.x)) - Math.min(...rotated.map((point) => point.x)),
     height: Math.max(...rotated.map((point) => point.y)) - Math.min(...rotated.map((point) => point.y)),
+    length: Math.max(...rotated.map((point) => point.z)) - Math.min(...rotated.map((point) => point.z))
+  };
+}
+
+function rotateBoxY(from, to, y = 0) {
+  const x0 = from[0] / 16;
+  const y0 = from[1] / 16;
+  const z0 = from[2] / 16;
+  const x1 = to[0] / 16;
+  const y1 = to[1] / 16;
+  const z1 = to[2] / 16;
+  const rotated = [
+    rotatePointY(x0, z0, y),
+    rotatePointY(x0, z1, y),
+    rotatePointY(x1, z0, y),
+    rotatePointY(x1, z1, y)
+  ];
+  return {
+    xOffset: Math.min(...rotated.map((point) => point.x)),
+    yOffset: Math.min(y0, y1),
+    zOffset: Math.min(...rotated.map((point) => point.z)),
+    width: Math.max(...rotated.map((point) => point.x)) - Math.min(...rotated.map((point) => point.x)),
+    height: Math.max(y0, y1) - Math.min(y0, y1),
     length: Math.max(...rotated.map((point) => point.z)) - Math.min(...rotated.map((point) => point.z))
   };
 }
@@ -239,21 +288,26 @@ export class BlockModelManager {
       if (!model?.elements?.length) continue;
       const xRotation = Number(application.x || 0);
       const yRotation = Number(application.y || 0);
+      const useFullRotation = shouldPreferModel(block.name) && xRotation !== 0;
 
       for (const element of model.elements) {
-        const box = rotateBox(
-          element.from || [0, 0, 0],
-          element.to || [16, 16, 16],
-          xRotation,
-          yRotation
-        );
+        const box = useFullRotation
+          ? rotateBox(
+              element.from || [0, 0, 0],
+              element.to || [16, 16, 16],
+              xRotation,
+              yRotation
+            )
+          : rotateBoxY(element.from || [0, 0, 0], element.to || [16, 16, 16], yRotation);
         const textures = {};
         const tints = {};
         const decorate = element.shade !== false;
         const faces = element.faces || {};
 
         for (const [faceName, face] of Object.entries(faces)) {
-          const rotatedFace = rotateFace(faceName, xRotation, yRotation);
+          const rotatedFace = useFullRotation
+            ? rotateFace(faceName, xRotation, yRotation)
+            : rotateFaceY(faceName, yRotation);
           if (!visibleFaces.has(rotatedFace)) continue;
           textures[rotatedFace] = resolveTexture(face.texture, model.textures || {});
           if (face.tintindex !== undefined) tints[rotatedFace] = face.tintindex;
@@ -279,6 +333,15 @@ export class BlockModelManager {
       }
     }
 
-    return output.length > 0 ? output : null;
+    if (output.length === 0) return null;
+    if (
+      !shouldPreferModel(block.name) &&
+      output.length === 1 &&
+      output[0].fullCube &&
+      !output[0].cutout
+    ) {
+      return null;
+    }
+    return output;
   }
 }
