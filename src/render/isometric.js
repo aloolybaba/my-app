@@ -12,9 +12,9 @@ const OUTPUT_HEIGHT = 768;
 const FIT_WIDTH = 760;
 const FIT_HEIGHT = 610;
 const FACE_SHADE = {
-  top: 1.08,
-  left: 0.7,
-  right: 0.88
+  top: 1.06,
+  left: 0.78,
+  right: 0.93
 };
 
 function iso(x, y, z) {
@@ -531,7 +531,9 @@ export async function renderIsometric(schematic, options) {
 
       if (!shape.topOnly && (!shape.fullCube || !hasSouthNeighbor)) {
         const texture = shape.textures?.south
-          ? await textures.loadTextureRef(shape.textures.south, block.name)
+          ? await textures.loadTextureRef(shape.textures.south, block.name, {
+              tint: shape.tints?.south !== undefined
+            })
           : sideTextureFor(block, faces, "south");
         drawTexturedFace(
           ctx,
@@ -544,7 +546,9 @@ export async function renderIsometric(schematic, options) {
       }
       if (!shape.topOnly && (!shape.fullCube || !hasEastNeighbor)) {
         const texture = shape.textures?.east
-          ? await textures.loadTextureRef(shape.textures.east, block.name)
+          ? await textures.loadTextureRef(shape.textures.east, block.name, {
+              tint: shape.tints?.east !== undefined
+            })
           : sideTextureFor(block, faces, "east");
         drawTexturedFace(
           ctx,
@@ -557,7 +561,9 @@ export async function renderIsometric(schematic, options) {
       }
       if (!shape.fullCube || !hasAbove) {
         const texture = shape.textures?.up
-          ? await textures.loadTextureRef(shape.textures.up, block.name)
+          ? await textures.loadTextureRef(shape.textures.up, block.name, {
+              tint: shape.tints?.up !== undefined
+            })
           : topTextureFor(block, faces);
         drawTexturedFace(
           ctx,
