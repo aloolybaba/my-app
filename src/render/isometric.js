@@ -300,7 +300,12 @@ function trapdoorShapes(block) {
 function shapesFor(block) {
   const name = block.name;
   const props = block.properties || {};
-  const alpha = name.includes("glass") || name === "water" ? 0.68 : 1;
+  const alpha =
+    name.includes("glass") || name === "water"
+      ? 0.68
+      : name === "slime_block" || name === "honey_block"
+        ? 0.82
+        : 1;
 
   if (name.endsWith("_slab") && props.type !== "double") {
     return [
