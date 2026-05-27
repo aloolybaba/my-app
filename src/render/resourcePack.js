@@ -34,6 +34,8 @@ const criticalTextureFiles = [
   "redstone_dust_line0.png",
   "redstone_dust_line1.png",
   "redstone_dust_overlay.png",
+  "redstone_torch.png",
+  "redstone_torch_off.png",
   "iron_bars.png",
   "smooth_stone.png",
   "repeater.png",
@@ -64,8 +66,13 @@ const criticalModelFiles = [
   ["models", "block", "repeater_1tick.json"],
   ["models", "block", "comparator.json"],
   ["models", "block", "redstone_dust_dot.json"],
+  ["models", "block", "redstone_dust_side.json"],
+  ["models", "block", "redstone_dust_side_alt.json"],
   ["models", "block", "redstone_dust_side0.json"],
+  ["models", "block", "redstone_dust_side_alt0.json"],
   ["models", "block", "redstone_dust_side1.json"],
+  ["models", "block", "redstone_dust_side_alt1.json"],
+  ["models", "block", "redstone_dust_up.json"],
   ["models", "block", "orientable.json"],
   ["models", "block", "orientable_vertical.json"]
 ];
