@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { createCanvas } from "canvas";
 import sharp from "sharp";
+import { BlockModelManager } from "./models.js";
 import { TextureManager } from "./textures.js";
 
 const TILE_W = 32;
@@ -111,7 +112,8 @@ function cubeShape(overrides = {}) {
     topOnly: false,
     fullCube: true,
     alpha: 1,
-    cutout: false
+    cutout: false,
+    decorate: true
   };
   return { ...base, ...overrides };
 }
@@ -476,6 +478,7 @@ function projectedBounds(size) {
 
 export async function renderIsometric(schematic, options) {
   const textures = new TextureManager(options.textureRoot);
+  const models = new BlockModelManager(options.textureRoot);
   const { bounds, size } = schematic;
   const margin = 144;
   const projected = projectedBounds(size);
@@ -489,14 +492,18 @@ export async function renderIsometric(schematic, options) {
 
   const ox = margin - projected.minX;
   const oy = margin - projected.minY;
-  const normalized = schematic.blocks
-    .map((block) => ({
+  const normalized = (
+    await Promise.all(schematic.blocks.map(async (block) => {
+      const modelShapes = await models.elementsFor(block).catch(() => null);
+      return {
       ...block,
       rx: block.x - bounds.minX,
       ry: block.y - bounds.minY,
       rz: block.z - bounds.minZ,
-      shapes: shapesFor(block)
+        shapes: modelShapes || shapesFor(block)
+      };
     }))
+  )
     .sort((a, b) => a.rx + a.rz + a.ry - (b.rx + b.rz + b.ry));
 
   const solidOccupied = new Set(
@@ -523,33 +530,42 @@ export async function renderIsometric(schematic, options) {
       const hasEastNeighbor = solidOccupied.has(`${block.rx + 1},${block.ry},${block.rz}`);
 
       if (!shape.topOnly && (!shape.fullCube || !hasSouthNeighbor)) {
+        const texture = shape.textures?.south
+          ? await textures.loadTextureRef(shape.textures.south, block.name)
+          : sideTextureFor(block, faces, "south");
         drawTexturedFace(
           ctx,
-          sideTextureFor(block, faces, "south"),
+          texture,
           geometry.south,
           FACE_SHADE.left,
           shape.alpha,
-          !shape.cutout
+          shape.decorate !== false && !shape.cutout
         );
       }
       if (!shape.topOnly && (!shape.fullCube || !hasEastNeighbor)) {
+        const texture = shape.textures?.east
+          ? await textures.loadTextureRef(shape.textures.east, block.name)
+          : sideTextureFor(block, faces, "east");
         drawTexturedFace(
           ctx,
-          sideTextureFor(block, faces, "east"),
+          texture,
           geometry.east,
           FACE_SHADE.right,
           shape.alpha,
-          !shape.cutout
+          shape.decorate !== false && !shape.cutout
         );
       }
       if (!shape.fullCube || !hasAbove) {
+        const texture = shape.textures?.up
+          ? await textures.loadTextureRef(shape.textures.up, block.name)
+          : topTextureFor(block, faces);
         drawTexturedFace(
           ctx,
-          topTextureFor(block, faces),
+          texture,
           geometry.top,
           FACE_SHADE.top,
           shape.alpha,
-          !shape.cutout
+          shape.decorate !== false && !shape.cutout
         );
       }
     }
