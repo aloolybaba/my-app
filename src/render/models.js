@@ -286,28 +286,17 @@ export class BlockModelManager {
       if (!application?.model) continue;
       const model = await this.loadModel(application.model);
       if (!model?.elements?.length) continue;
-      const xRotation = Number(application.x || 0);
       const yRotation = Number(application.y || 0);
-      const useFullRotation = shouldPreferModel(block.name) && xRotation !== 0;
 
       for (const element of model.elements) {
-        const box = useFullRotation
-          ? rotateBox(
-              element.from || [0, 0, 0],
-              element.to || [16, 16, 16],
-              xRotation,
-              yRotation
-            )
-          : rotateBoxY(element.from || [0, 0, 0], element.to || [16, 16, 16], yRotation);
+        const box = rotateBoxY(element.from || [0, 0, 0], element.to || [16, 16, 16], yRotation);
         const textures = {};
         const tints = {};
         const decorate = element.shade !== false;
         const faces = element.faces || {};
 
         for (const [faceName, face] of Object.entries(faces)) {
-          const rotatedFace = useFullRotation
-            ? rotateFace(faceName, xRotation, yRotation)
-            : rotateFaceY(faceName, yRotation);
+          const rotatedFace = rotateFaceY(faceName, yRotation);
           if (!visibleFaces.has(rotatedFace)) continue;
           textures[rotatedFace] = resolveTexture(face.texture, model.textures || {});
           if (face.tintindex !== undefined) tints[rotatedFace] = face.tintindex;
