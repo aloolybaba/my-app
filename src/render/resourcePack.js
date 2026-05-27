@@ -23,16 +23,49 @@ const criticalTextureFiles = [
   "observer_front.png",
   "observer_top.png",
   "dispenser_front.png",
+  "dispenser_front_vertical.png",
   "dropper_front.png",
+  "dropper_front_vertical.png",
   "piston_side.png",
   "piston_top.png",
+  "piston_bottom.png",
+  "piston_inner.png",
   "redstone_dust_dot.png",
   "redstone_dust_line0.png",
+  "redstone_dust_line1.png",
   "redstone_dust_overlay.png",
   "iron_bars.png",
   "smooth_stone.png",
   "repeater.png",
-  "comparator.png"
+  "repeater_on.png",
+  "comparator.png",
+  "comparator_on.png"
+];
+
+const criticalModelFiles = [
+  ["blockstates", "hopper.json"],
+  ["blockstates", "observer.json"],
+  ["blockstates", "dispenser.json"],
+  ["blockstates", "dropper.json"],
+  ["blockstates", "piston.json"],
+  ["blockstates", "sticky_piston.json"],
+  ["blockstates", "repeater.json"],
+  ["blockstates", "comparator.json"],
+  ["blockstates", "redstone_wire.json"],
+  ["models", "block", "hopper.json"],
+  ["models", "block", "hopper_side.json"],
+  ["models", "block", "observer.json"],
+  ["models", "block", "dispenser.json"],
+  ["models", "block", "dropper.json"],
+  ["models", "block", "template_piston.json"],
+  ["models", "block", "piston.json"],
+  ["models", "block", "repeater_1tick.json"],
+  ["models", "block", "comparator.json"],
+  ["models", "block", "redstone_dust_dot.json"],
+  ["models", "block", "redstone_dust_side0.json"],
+  ["models", "block", "redstone_dust_side1.json"],
+  ["models", "block", "orientable.json"],
+  ["models", "block", "orientable_vertical.json"]
 ];
 
 function findZipCandidates(textureRoot) {
@@ -71,11 +104,7 @@ async function hasCriticalTextures(dir) {
 
 async function hasModelFiles(textureRoot) {
   const minecraftRoot = path.resolve(process.cwd(), textureRoot, "..", "..");
-  return (
-    fs.existsSync(path.join(minecraftRoot, "blockstates", "hopper.json")) &&
-    fs.existsSync(path.join(minecraftRoot, "models", "block", "hopper.json")) &&
-    fs.existsSync(path.join(minecraftRoot, "models", "block", "orientable.json"))
-  );
+  return criticalModelFiles.every((parts) => fs.existsSync(path.join(minecraftRoot, ...parts)));
 }
 
 async function findPngDirectory(dir, depth = 0) {
