@@ -13,6 +13,28 @@ const githubTextureSource = {
   blockModelsPath: "assets/minecraft/models/block/"
 };
 
+const criticalTextureFiles = [
+  "furnace_side.png",
+  "furnace_top.png",
+  "hopper_outside.png",
+  "hopper_inside.png",
+  "hopper_top.png",
+  "observer_side.png",
+  "observer_front.png",
+  "observer_top.png",
+  "dispenser_front.png",
+  "dropper_front.png",
+  "piston_side.png",
+  "piston_top.png",
+  "redstone_dust_dot.png",
+  "redstone_dust_line0.png",
+  "redstone_dust_overlay.png",
+  "iron_bars.png",
+  "smooth_stone.png",
+  "repeater.png",
+  "comparator.png"
+];
+
 function findZipCandidates(textureRoot) {
   const root = process.cwd();
   return [
@@ -41,6 +63,10 @@ async function hasPngFiles(dir) {
   } catch {
     return false;
   }
+}
+
+async function hasCriticalTextures(dir) {
+  return criticalTextureFiles.every((file) => fs.existsSync(path.join(dir, file)));
 }
 
 async function hasModelFiles(textureRoot) {
@@ -188,25 +214,25 @@ async function flattenPngDirectory(sourceDir, targetDir) {
 export async function prepareResourcePack(textureRoot, textureZipUrl) {
   const targetDir = path.resolve(process.cwd(), textureRoot);
   const texturesReady = await hasPngFiles(targetDir);
+  const criticalTexturesReady = texturesReady && (await hasCriticalTextures(targetDir));
   const modelsReady = await hasModelFiles(textureRoot);
-  if (texturesReady && modelsReady) {
+  if (criticalTexturesReady && modelsReady) {
     logger.info("Texture folder ready", { targetDir });
     return;
   }
 
-  if (texturesReady && !modelsReady) {
+  if (texturesReady && (!modelsReady || !criticalTexturesReady)) {
     try {
       await downloadGithubRenderAssets(targetDir, textureZipUrl);
-      if (await hasModelFiles(textureRoot)) {
-        logger.info("Minecraft model assets ready", { targetDir });
+      if ((await hasModelFiles(textureRoot)) && (await hasCriticalTextures(targetDir))) {
+        logger.info("Minecraft render assets ready", { targetDir });
         return;
       }
     } catch (error) {
-      logger.warn("Minecraft model asset download failed; renderer will use shape fallbacks.", {
+      logger.warn("Minecraft render asset download failed; renderer will use fallbacks.", {
         error: error.message,
         targetDir
       });
-      return;
     }
   }
 
