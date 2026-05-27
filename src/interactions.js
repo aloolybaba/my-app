@@ -140,7 +140,7 @@ function buildSubmissionInfoEmbed(submission, creatorId) {
     .setTimestamp();
 }
 
-function buildRenderedSubmissionEmbed(submission, creatorId) {
+function buildRenderedSubmissionEmbed(submission, creatorId, imageUrl = "attachment://render.png") {
   return new EmbedBuilder()
     .setColor(brand.gold)
     .setTitle(submission?.schematic_name || "Schematic Submission")
@@ -156,7 +156,7 @@ function buildRenderedSubmissionEmbed(submission, creatorId) {
         `**Size & Volume**\nSize: \`${submission?.width || 0} x ${submission?.height || 0} x ${submission?.length || 0}\`\nVolume: \`${submission?.non_air_volume || 0}/${submission?.bounding_volume || 0}\``
       ].join("\n\n")
     )
-    .setImage("attachment://render.png")
+    .setImage(imageUrl)
     .setTimestamp();
 }
 
@@ -211,7 +211,13 @@ async function upsertSubmissionInfoMessage(channel, ticket) {
   }
 
   if (existing) {
-    await existing.edit(payload);
+    await existing.edit(payload).catch(async (error) => {
+      logger.warn("Submission info message edit failed; sending replacement", {
+        ticketId: ticket.id,
+        error: error.message
+      });
+      existing = await channel.send(payload);
+    });
     queries.setSetting.run(key, existing.id);
     setTimeout(() => {
       cleanupSubmissionInfoMessages(channel).catch((error) =>
@@ -243,6 +249,14 @@ async function updateRenderedSubmissionMessage(channel, ticket) {
   if (!message) return null;
 
   try {
+    const existingImageUrl = message.embeds?.[0]?.image?.url;
+    if (existingImageUrl) {
+      await message.edit({
+        embeds: [buildRenderedSubmissionEmbed(submission, ticket.creator_id, existingImageUrl)]
+      });
+      return message;
+    }
+
     const file = new AttachmentBuilder(submission.render_path, { name: "render.png" });
     await message.edit({
       embeds: [buildRenderedSubmissionEmbed(submission, ticket.creator_id)],
@@ -373,6 +387,10 @@ async function saveMainSubmission(interaction) {
     return;
   }
 
+  await interaction.deferReply({
+    flags: MessageFlags.Ephemeral
+  });
+
   const now = Date.now();
   const submission = queries.getSubmissionByTicket.get(ticket.id);
   if (submission) {
@@ -400,10 +418,9 @@ async function saveMainSubmission(interaction) {
 
   await upsertSubmissionInfoMessage(interaction.channel, ticket);
   await updateRenderedSubmissionMessage(interaction.channel, ticket);
-  await interaction.reply({
-    content: "Schematic information saved. Use **Add Extra Details** for positives, negatives, and instructions.",
-    flags: MessageFlags.Ephemeral
-  });
+  await interaction.editReply(
+    "Schematic information saved. Use **Add Extra Details** for positives, negatives, and instructions."
+  );
 }
 
 async function handleButton(interaction, renderQueue) {
@@ -498,6 +515,9 @@ async function handleModal(interaction) {
       });
       return;
     }
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral
+    });
     queries.updateSubmissionDetails.run(
       optionalField(interaction, "positives"),
       optionalField(interaction, "negatives"),
@@ -507,10 +527,7 @@ async function handleModal(interaction) {
     );
     await upsertSubmissionInfoMessage(interaction.channel, ticket);
     await updateRenderedSubmissionMessage(interaction.channel, ticket);
-    await interaction.reply({
-      content: "Extra schematic details saved.",
-      flags: MessageFlags.Ephemeral
-    });
+    await interaction.editReply("Extra schematic details saved.");
   }
 }
 
