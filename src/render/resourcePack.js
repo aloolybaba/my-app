@@ -8,7 +8,9 @@ const githubTextureSource = {
   owner: "InventivetalentDev",
   repo: "minecraft-assets",
   branch: "26.1.2",
-  blockPath: "assets/minecraft/textures/block/"
+  blockPath: "assets/minecraft/textures/block/",
+  blockstatesPath: "assets/minecraft/blockstates/",
+  blockModelsPath: "assets/minecraft/models/block/"
 };
 
 function findZipCandidates(textureRoot) {
@@ -39,6 +41,15 @@ async function hasPngFiles(dir) {
   } catch {
     return false;
   }
+}
+
+async function hasModelFiles(textureRoot) {
+  const minecraftRoot = path.resolve(process.cwd(), textureRoot, "..", "..");
+  return (
+    fs.existsSync(path.join(minecraftRoot, "blockstates", "hopper.json")) &&
+    fs.existsSync(path.join(minecraftRoot, "models", "block", "hopper.json")) &&
+    fs.existsSync(path.join(minecraftRoot, "models", "block", "orientable.json"))
+  );
 }
 
 async function findPngDirectory(dir, depth = 0) {
@@ -100,9 +111,9 @@ async function mapWithConcurrency(items, concurrency, worker) {
   await Promise.all(runners);
 }
 
-async function downloadGithubBlockTextures(targetDir, textureZipUrl) {
+async function downloadGithubRenderAssets(targetDir, textureZipUrl) {
   const branch = inferGithubBranch(textureZipUrl);
-  const { owner, repo, blockPath } = githubTextureSource;
+  const { owner, repo, blockPath, blockstatesPath, blockModelsPath } = githubTextureSource;
   const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`;
   const response = await fetch(treeUrl, {
     headers: {
@@ -115,22 +126,25 @@ async function downloadGithubBlockTextures(targetDir, textureZipUrl) {
   }
 
   const body = await response.json();
-  const pngs = (body.tree || []).filter(
+  const assets = (body.tree || []).filter(
     (entry) =>
       entry.type === "blob" &&
-      entry.path?.startsWith(blockPath) &&
-      entry.path.toLowerCase().endsWith(".png")
+      ((entry.path?.startsWith(blockPath) && entry.path.toLowerCase().endsWith(".png")) ||
+        (entry.path?.startsWith(blockstatesPath) && entry.path.toLowerCase().endsWith(".json")) ||
+        (entry.path?.startsWith(blockModelsPath) && entry.path.toLowerCase().endsWith(".json")))
   );
 
-  if (pngs.length === 0) {
-    throw new Error("GitHub texture tree did not contain block PNG files.");
+  if (assets.length === 0) {
+    throw new Error("GitHub asset tree did not contain render assets.");
   }
 
   let saved = 0;
   await fsp.mkdir(targetDir, { recursive: true });
-  await mapWithConcurrency(pngs, 12, async (entry) => {
-    const name = path.basename(entry.path);
-    const output = path.join(targetDir, name);
+  await mapWithConcurrency(assets, 12, async (entry) => {
+    const relative = entry.path.replace(/^assets\/minecraft\//, "");
+    const output = entry.path.startsWith(blockPath)
+      ? path.join(targetDir, path.basename(entry.path))
+      : path.join(path.resolve(targetDir, "..", ".."), relative);
     if (fs.existsSync(output)) {
       saved += 1;
       return;
@@ -142,19 +156,20 @@ async function downloadGithubBlockTextures(targetDir, textureZipUrl) {
       }
     });
     if (!asset.ok) return;
+    await fsp.mkdir(path.dirname(output), { recursive: true });
     await fsp.writeFile(output, Buffer.from(await asset.arrayBuffer()));
     saved += 1;
   });
 
   if (saved === 0) {
-    throw new Error("GitHub texture files were found but none could be downloaded.");
+    throw new Error("GitHub render assets were found but none could be downloaded.");
   }
 
-  logger.info("Downloaded block textures", {
+  logger.info("Downloaded render assets", {
     targetDir,
     branch,
     saved,
-    available: pngs.length
+    available: assets.length
   });
 }
 
@@ -172,9 +187,27 @@ async function flattenPngDirectory(sourceDir, targetDir) {
 
 export async function prepareResourcePack(textureRoot, textureZipUrl) {
   const targetDir = path.resolve(process.cwd(), textureRoot);
-  if (await hasPngFiles(targetDir)) {
+  const texturesReady = await hasPngFiles(targetDir);
+  const modelsReady = await hasModelFiles(textureRoot);
+  if (texturesReady && modelsReady) {
     logger.info("Texture folder ready", { targetDir });
     return;
+  }
+
+  if (texturesReady && !modelsReady) {
+    try {
+      await downloadGithubRenderAssets(targetDir, textureZipUrl);
+      if (await hasModelFiles(textureRoot)) {
+        logger.info("Minecraft model assets ready", { targetDir });
+        return;
+      }
+    } catch (error) {
+      logger.warn("Minecraft model asset download failed; renderer will use shape fallbacks.", {
+        error: error.message,
+        targetDir
+      });
+      return;
+    }
   }
 
   const zipPath = findZipCandidates(textureRoot).find((candidate) =>
@@ -204,10 +237,10 @@ export async function prepareResourcePack(textureRoot, textureZipUrl) {
   }
 
   try {
-    await downloadGithubBlockTextures(targetDir, textureZipUrl);
+    await downloadGithubRenderAssets(targetDir, textureZipUrl);
     if (await hasPngFiles(targetDir)) return;
   } catch (error) {
-    logger.warn("GitHub texture download failed; trying texture zip fallback.", {
+    logger.warn("GitHub render asset download failed; trying texture zip fallback.", {
       error: error.message,
       targetDir
     });
