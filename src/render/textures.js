@@ -21,6 +21,20 @@ const fallbackColors = {
   lava: "#e66a22"
 };
 
+function fallbackColorFor(key) {
+  const name = String(key || "").toLowerCase();
+  if (fallbackColors[name]) return fallbackColors[name];
+  if (name.includes("white") || name.includes("quartz") || name.includes("snow")) return "#e7ecec";
+  if (name.includes("light_gray") || name.includes("iron")) return "#c9cccc";
+  if (name.includes("gray") || name.includes("observer") || name.includes("dispenser") || name.includes("dropper")) return "#777a7a";
+  if (name.includes("black") || name.includes("deepslate") || name.includes("hopper")) return "#303236";
+  if (name.includes("redstone") || name.includes("red_")) return "#b81818";
+  if (name.includes("slime") || name.includes("lime") || name.includes("green")) return "#5fa64c";
+  if (name.includes("honey")) return "#d48b2f";
+  if (name.includes("wood") || name.includes("planks") || name.includes("barrel") || name.includes("chest")) return "#a97854";
+  return "#8a8d8e";
+}
+
 const specialTextures = {
   redstone_wire: {
     top: ["redstone_dust_dot.png", "redstone_dust_line0.png", "redstone_dust_line1.png"],
@@ -151,7 +165,7 @@ export class TextureManager {
       }
     }
 
-    const color = fallbackColors[fallbackKey] || "#a97854";
+    const color = fallbackColorFor(fallbackKey);
     const canvas = colorCanvas(color, fallbackKey);
     this.cache.set(cacheKey, canvas);
     return canvas;
