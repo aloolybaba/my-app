@@ -54,8 +54,11 @@ export class RenderQueue {
       clearTimeout(timeout);
       this.active.delete(job.attachmentId);
       if (message.ok) {
-        await job.onDone(message.result).catch((error) => {
+        await job.onDone(message.result).catch(async (error) => {
           logger.error("Render completion handler failed", error);
+          await job.onError(error).catch((handlerError) => {
+            logger.error("Render completion fallback handler failed", handlerError);
+          });
         });
       } else {
         await job.onError(new Error(message.error)).catch((error) => {
