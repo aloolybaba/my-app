@@ -31,6 +31,12 @@ function asArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
+function selectModelApplication(value) {
+  const entries = asArray(value).filter(Boolean);
+  if (entries.length === 0) return [];
+  return [entries.find((entry) => entry.model) || entries[0]];
+}
+
 function propsMatch(properties, query) {
   if (!query) return true;
   if (query.OR) return asArray(query.OR).some((item) => propsMatch(properties, item));
@@ -122,6 +128,41 @@ function rotateBox(from, to, xRotation = 0, yRotation = 0) {
     height: Math.max(...rotated.map((point) => point.y)) - Math.min(...rotated.map((point) => point.y)),
     length: Math.max(...rotated.map((point) => point.z)) - Math.min(...rotated.map((point) => point.z))
   };
+}
+
+function normalizeRotation(value = 0) {
+  return (((Number(value) || 0) % 360) + 360) % 360;
+}
+
+function defaultUv(faceName, from, to) {
+  const [x0, y0, z0] = from;
+  const [x1, y1, z1] = to;
+  switch (faceName) {
+    case "down":
+    case "up":
+      return [x0, z0, x1, z1];
+    case "north":
+    case "south":
+      return [x0, 16 - y1, x1, 16 - y0];
+    case "west":
+    case "east":
+      return [z0, 16 - y1, z1, 16 - y0];
+    default:
+      return [0, 0, 16, 16];
+  }
+}
+
+function faceUv(faceName, face, from, to) {
+  if (Array.isArray(face.uv) && face.uv.length === 4) return face.uv.map(Number);
+  return defaultUv(faceName, from, to);
+}
+
+function faceTextureRotation(rotatedFace, face, application) {
+  let rotation = Number(face.rotation || 0);
+  if (!application?.uvlock && (rotatedFace === "up" || rotatedFace === "down")) {
+    rotation += Number(application?.y || 0);
+  }
+  return normalizeRotation(rotation);
 }
 
 function textureValue(value) {
@@ -219,13 +260,13 @@ export class BlockModelManager {
     if (blockstate.variants) {
       const entries = Object.entries(blockstate.variants);
       const matched = entries.find(([key]) => variantMatches(properties, key)) || entries[0];
-      return asArray(matched?.[1]);
+      return selectModelApplication(matched?.[1]);
     }
 
     if (blockstate.multipart) {
       return blockstate.multipart
         .filter((part) => propsMatch(properties, part.when))
-        .flatMap((part) => asArray(part.apply));
+        .flatMap((part) => selectModelApplication(part.apply));
     }
 
     return [];
@@ -255,13 +296,19 @@ export class BlockModelManager {
         );
         const textures = {};
         const tints = {};
+        const uvs = {};
+        const faceRotations = {};
         const decorate = element.shade !== false;
         const faces = element.faces || {};
+        const from = element.from || [0, 0, 0];
+        const to = element.to || [16, 16, 16];
 
         for (const [faceName, face] of Object.entries(faces)) {
           const rotatedFace = rotateFace(faceName, xRotation, yRotation);
           if (!visibleFaces.has(rotatedFace)) continue;
           textures[rotatedFace] = resolveTexture(face.texture, model.textures || {});
+          uvs[rotatedFace] = faceUv(faceName, face, from, to);
+          faceRotations[rotatedFace] = faceTextureRotation(rotatedFace, face, application);
           if (face.tintindex !== undefined) tints[rotatedFace] = face.tintindex;
         }
 
@@ -280,7 +327,9 @@ export class BlockModelManager {
           decorate,
           cutout: Object.values(textures).some((texture) => isCutout(block.name, texture)),
           textures,
-          tints
+          tints,
+          uvs,
+          faceRotations
         });
       }
     }
