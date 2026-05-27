@@ -111,8 +111,13 @@ function textureFileName(textureRef) {
       ? textureRef?.sprite || textureRef?.texture
       : textureRef;
   if (!raw) return null;
-  const clean = String(raw).replace(/^minecraft:/, "").replace(/^block\//, "");
-  return `${clean}.png`;
+  const clean = String(raw)
+    .replace(/^minecraft:/, "")
+    .replace(/^assets\/minecraft\/textures\//, "")
+    .replace(/^textures\//, "")
+    .replace(/^block\//, "")
+    .replace(/\.png$/i, "");
+  return `${path.basename(clean)}.png`;
 }
 
 export class TextureManager {
@@ -140,9 +145,10 @@ export class TextureManager {
 
   async loadTextureRef(textureRef, fallbackKey = "stone") {
     const fileName = textureFileName(textureRef);
+    const base = fileName ? path.basename(fileName) : null;
     return this.loadTexture(
       `texture:${fileName || fallbackKey}`,
-      fileName ? [fileName] : [],
+      fileName ? unique([fileName, base, "missing.png"]) : ["missing.png"],
       fallbackKey
     );
   }
