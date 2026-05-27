@@ -16,7 +16,8 @@ import {
 import { logger } from "./logger.js";
 
 const cooldowns = new Map();
-const ticketCreationLocks = new Set();
+const ticketCreationLocks = new Map();
+const ticketCreationLockMs = 45_000;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -24,6 +25,16 @@ function delay(ms) {
 
 function createJitter(min = 900, max = 2200) {
   return Math.floor(min + Math.random() * (max - min));
+}
+
+function isTicketCreationLocked(userId) {
+  const startedAt = ticketCreationLocks.get(userId);
+  if (!startedAt) return false;
+  if (Date.now() - startedAt > ticketCreationLockMs) {
+    ticketCreationLocks.delete(userId);
+    return false;
+  }
+  return true;
 }
 
 function optionalField(interaction, id) {
@@ -310,21 +321,48 @@ async function updateRenderedSubmissionMessage(channel, ticket) {
 }
 
 async function createTicket(interaction) {
-  if (ticketCreationLocks.has(interaction.user.id)) {
+  if (isTicketCreationLocked(interaction.user.id)) {
+    const existing = queries.getOpenTicketByCreator.get(interaction.user.id);
+    if (existing) {
+      const existingChannel = await interaction.guild.channels
+        .fetch(existing.channel_id)
+        .catch(() => null);
+      if (existingChannel) {
+        await interaction.reply({
+          content: `You already have an open ticket: <#${existing.channel_id}>`,
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+      queries.closeTicket.run(Date.now(), existing.channel_id);
+    }
+
+    const existingDiscordChannel = await findOpenTicketChannel(
+      interaction.guild,
+      interaction.user.id
+    ).catch(() => null);
+    if (existingDiscordChannel) {
+      await interaction.reply({
+        content: `You already have an open ticket: <#${existingDiscordChannel.id}>`,
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+
     await interaction.reply({
-      content: "I am already creating your ticket. Please wait a moment.",
+      content: "I am still creating your ticket. Please wait a few seconds and press again if nothing appears.",
       flags: MessageFlags.Ephemeral
     });
     return;
   }
 
-  ticketCreationLocks.add(interaction.user.id);
-  await interaction.deferReply({
-    flags: MessageFlags.Ephemeral
-  });
-
-  const now = Date.now();
+  ticketCreationLocks.set(interaction.user.id, Date.now());
   try {
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral
+    });
+
+    const now = Date.now();
     const last = cooldowns.get(interaction.user.id) || 0;
     if (now - last < config.ticketCooldownSeconds * 1000) {
       await interaction.editReply("Please wait before creating another submission ticket.");
@@ -353,8 +391,6 @@ async function createTicket(interaction) {
       return;
     }
 
-    cooldowns.set(interaction.user.id, now);
-
     const channelName = `schematic-${cleanChannelName(interaction.user.username)}`;
     const overwrites = buildTicketOverwrites(guild, interaction.user.id);
     const categoryId = await getSharedTicketCategoryId(guild).catch((error) => {
@@ -371,6 +407,8 @@ async function createTicket(interaction) {
       permissionOverwrites: overwrites,
       topic: `Schematic ticket for ${interaction.user.tag} (${interaction.user.id})`
     });
+
+    cooldowns.set(interaction.user.id, now);
 
     const ticketResult = queries.createTicket.run(
       guild.id,
