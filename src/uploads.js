@@ -28,17 +28,17 @@ function formatBlock(text) {
 function buildSubmissionEmbed(submission, creatorId) {
   return new EmbedBuilder()
     .setColor(brand.gold)
-    .setTitle(submission.schematic_name || "Schematic Submission")
+    .setTitle(submission?.schematic_name || "Schematic Submission")
     .setDescription(
       [
-        `**Designers**\n${formatBlock(submission.designers || `<@${creatorId}>`)}`,
-        `**Credits**\n${formatBlock(submission.credits)}`,
-        `**Rates**\n${formatBlock(submission.rates)}`,
-        `**Stats**\n${formatBlock(submission.stats)}`,
-        `**Positives**\n${formatBlock(submission.positives)}`,
-        `**Negatives**\n${formatBlock(submission.negatives)}`,
-        `**Instructions**\n${formatBlock(submission.instructions)}`,
-        `**Size & Volume**\nSize: \`${submission.width} x ${submission.height} x ${submission.length}\`\nVolume: \`${submission.non_air_volume}/${submission.bounding_volume}\``
+        `**Designers**\n${formatBlock(submission?.designers || `<@${creatorId}>`)}`,
+        `**Credits**\n${formatBlock(submission?.credits)}`,
+        `**Rates**\n${formatBlock(submission?.rates)}`,
+        `**Stats**\n${formatBlock(submission?.stats)}`,
+        `**Positives**\n${formatBlock(submission?.positives)}`,
+        `**Negatives**\n${formatBlock(submission?.negatives)}`,
+        `**Instructions**\n${formatBlock(submission?.instructions)}`,
+        `**Size & Volume**\nSize: \`${submission?.width || 0} x ${submission?.height || 0} x ${submission?.length || 0}\`\nVolume: \`${submission?.non_air_volume || 0}/${submission?.bounding_volume || 0}\``
       ].join("\n\n")
     )
     .setImage("attachment://render.png")
@@ -250,8 +250,10 @@ export async function handleMessageCreate(message, renderQueue) {
           );
 
           const submission = queries.getSubmissionByTicket.get(ticket.id);
+          await fs.access(outputPath);
           const file = new AttachmentBuilder(outputPath, { name: "render.png" });
           const renderMessage = await message.channel.send({
+            content: "Rendered schematic preview:",
             embeds: [buildSubmissionEmbed(submission, ticket.creator_id)],
             files: [file]
           });
