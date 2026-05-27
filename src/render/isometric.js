@@ -8,8 +8,8 @@ const TILE_H = 16;
 const BLOCK_H = 28;
 const OUTPUT_WIDTH = 1280;
 const OUTPUT_HEIGHT = 768;
-const FIT_WIDTH = 980;
-const FIT_HEIGHT = 660;
+const FIT_WIDTH = 760;
+const FIT_HEIGHT = 610;
 const FACE_SHADE = {
   top: 1.08,
   left: 0.7,
@@ -46,7 +46,7 @@ function clipPoly(ctx, points) {
   ctx.clip();
 }
 
-function drawTexturedFace(ctx, texture, points, shadeAmount, alpha = 1) {
+function drawTexturedFace(ctx, texture, points, shadeAmount, alpha = 1, decorate = true) {
   const width = texture.width || 16;
   const height = texture.height || 16;
   const p0 = points[0];
@@ -68,6 +68,8 @@ function drawTexturedFace(ctx, texture, points, shadeAmount, alpha = 1) {
   ctx.drawImage(texture, 0, 0, width, height);
   ctx.restore();
 
+  if (!decorate) return;
+
   shade(ctx, points, shadeAmount);
   ctx.strokeStyle = "rgba(0,0,0,0.26)";
   ctx.lineWidth = 0.35;
@@ -78,20 +80,27 @@ function drawTexturedFace(ctx, texture, points, shadeAmount, alpha = 1) {
   ctx.stroke();
 }
 
-function topTextureFor(block, faces) {
-  return block.properties?.facing === "up" ? faces.front : faces.top;
+function boolProp(props, name) {
+  return props?.[name] === true || props?.[name] === "true";
 }
 
-function sideTextureFor(block, faces, visibleFace) {
+function connectProp(props, name) {
+  const value = props?.[name];
+  return value === true || value === "true" || value === "low" || value === "tall";
+}
+
+function topTextureFor(block, faces) {
   const facing = block.properties?.facing;
-  if (visibleFace === "left" && facing === "south") return faces.front;
-  if (visibleFace === "right" && facing === "north") return faces.front;
+  return facing === "up" || facing === "down" ? faces.front : faces.top;
+}
+
+function sideTextureFor(block, faces, faceName) {
+  const facing = block.properties?.facing;
+  if (faceName === facing) return faces.front;
   return faces.side;
 }
 
-function shapeFor(block) {
-  const name = block.name;
-  const props = block.properties || {};
+function cubeShape(overrides = {}) {
   const base = {
     xOffset: 0,
     yOffset: 0,
@@ -101,16 +110,205 @@ function shapeFor(block) {
     length: 1,
     topOnly: false,
     fullCube: true,
-    alpha: name.includes("glass") || name === "water" ? 0.68 : 1
+    alpha: 1,
+    cutout: false
   };
+  return { ...base, ...overrides };
+}
+
+function paneShapes(block) {
+  const props = block.properties || {};
+  const alpha = block.name.includes("glass") ? 0.58 : 1;
+  const shapes = [
+    cubeShape({
+      xOffset: 0.4375,
+      zOffset: 0.4375,
+      width: 0.125,
+      length: 0.125,
+      fullCube: false,
+      cutout: true,
+      alpha
+    })
+  ];
+  const north = boolProp(props, "north");
+  const south = boolProp(props, "south");
+  const west = boolProp(props, "west");
+  const east = boolProp(props, "east");
+
+  if (north || (!north && !south && !west && !east)) {
+    shapes.push(
+      cubeShape({
+        xOffset: 0.4375,
+        zOffset: 0,
+        width: 0.125,
+        length: 0.5,
+        fullCube: false,
+        cutout: true,
+        alpha
+      })
+    );
+  }
+  if (south || (!north && !south && !west && !east)) {
+    shapes.push(
+      cubeShape({
+        xOffset: 0.4375,
+        zOffset: 0.5,
+        width: 0.125,
+        length: 0.5,
+        fullCube: false,
+        cutout: true,
+        alpha
+      })
+    );
+  }
+  if (west || (!north && !south && !west && !east)) {
+    shapes.push(
+      cubeShape({
+        xOffset: 0,
+        zOffset: 0.4375,
+        width: 0.5,
+        length: 0.125,
+        fullCube: false,
+        cutout: true,
+        alpha
+      })
+    );
+  }
+  if (east || (!north && !south && !west && !east)) {
+    shapes.push(
+      cubeShape({
+        xOffset: 0.5,
+        zOffset: 0.4375,
+        width: 0.5,
+        length: 0.125,
+        fullCube: false,
+        cutout: true,
+        alpha
+      })
+    );
+  }
+
+  return shapes;
+}
+
+function fenceShapes(block) {
+  const props = block.properties || {};
+  const shapes = [
+    cubeShape({
+      xOffset: 0.375,
+      zOffset: 0.375,
+      width: 0.25,
+      length: 0.25,
+      fullCube: false
+    })
+  ];
+  if (connectProp(props, "north")) {
+    shapes.push(
+      cubeShape({ xOffset: 0.375, zOffset: 0, width: 0.25, length: 0.5, fullCube: false })
+    );
+  }
+  if (connectProp(props, "south")) {
+    shapes.push(
+      cubeShape({ xOffset: 0.375, zOffset: 0.5, width: 0.25, length: 0.5, fullCube: false })
+    );
+  }
+  if (connectProp(props, "west")) {
+    shapes.push(
+      cubeShape({ xOffset: 0, zOffset: 0.375, width: 0.5, length: 0.25, fullCube: false })
+    );
+  }
+  if (connectProp(props, "east")) {
+    shapes.push(
+      cubeShape({ xOffset: 0.5, zOffset: 0.375, width: 0.5, length: 0.25, fullCube: false })
+    );
+  }
+  return shapes;
+}
+
+function hopperShapes() {
+  return [
+    cubeShape({
+      yOffset: 0.625,
+      height: 0.375,
+      fullCube: false
+    }),
+    cubeShape({
+      xOffset: 0.25,
+      zOffset: 0.25,
+      width: 0.5,
+      height: 0.625,
+      length: 0.5,
+      fullCube: false
+    })
+  ];
+}
+
+function trapdoorShapes(block) {
+  const props = block.properties || {};
+  if (boolProp(props, "open")) {
+    const facing = props.facing || "north";
+    if (facing === "south") {
+      return [
+        cubeShape({
+          zOffset: 0.8125,
+          length: 0.1875,
+          fullCube: false,
+          cutout: true
+        })
+      ];
+    }
+    if (facing === "east") {
+      return [
+        cubeShape({
+          xOffset: 0.8125,
+          width: 0.1875,
+          fullCube: false,
+          cutout: true
+        })
+      ];
+    }
+    if (facing === "west") {
+      return [
+        cubeShape({
+          width: 0.1875,
+          fullCube: false,
+          cutout: true
+        })
+      ];
+    }
+    return [
+      cubeShape({
+        length: 0.1875,
+        fullCube: false,
+        cutout: true
+      })
+    ];
+  }
+
+  return [
+    cubeShape({
+      yOffset: props.half === "top" ? 0.8125 : 0,
+      height: 0.1875,
+      fullCube: false,
+      cutout: true
+    })
+  ];
+}
+
+function shapesFor(block) {
+  const name = block.name;
+  const props = block.properties || {};
+  const alpha = name.includes("glass") || name === "water" ? 0.68 : 1;
 
   if (name.endsWith("_slab") && props.type !== "double") {
-    return {
-      ...base,
+    return [
+      cubeShape({
       yOffset: props.type === "top" ? 0.5 : 0,
       height: 0.5,
-      fullCube: false
-    };
+        fullCube: false,
+        alpha
+      })
+    ];
   }
 
   if (
@@ -119,55 +317,95 @@ function shapeFor(block) {
     name.endsWith("_pressure_plate") ||
     name.endsWith("_rail")
   ) {
-    return {
-      ...base,
-      xOffset: 0.04,
-      zOffset: 0.04,
-      width: 0.92,
-      length: 0.92,
-      height: 0.05,
-      topOnly: true,
-      fullCube: false
-    };
+    return [
+      cubeShape({
+        xOffset: 0.04,
+        zOffset: 0.04,
+        width: 0.92,
+        length: 0.92,
+        height: 0.05,
+        topOnly: true,
+        fullCube: false,
+        cutout: true,
+        alpha
+      })
+    ];
   }
 
   if (name === "repeater" || name === "comparator") {
-    return {
-      ...base,
-      xOffset: 0.03,
-      zOffset: 0.03,
-      width: 0.94,
-      length: 0.94,
-      height: 0.13,
-      fullCube: false
-    };
+    return [
+      cubeShape({
+        xOffset: 0.03,
+        zOffset: 0.03,
+        width: 0.94,
+        length: 0.94,
+        height: 0.13,
+        fullCube: false,
+        alpha
+      })
+    ];
   }
 
   if (name.endsWith("_button")) {
-    return {
-      ...base,
-      xOffset: 0.25,
-      zOffset: 0.25,
-      width: 0.5,
-      length: 0.5,
-      height: 0.16,
-      fullCube: false
-    };
+    return [
+      cubeShape({
+        xOffset: 0.25,
+        zOffset: 0.25,
+        width: 0.5,
+        length: 0.5,
+        height: 0.16,
+        fullCube: false,
+        alpha
+      })
+    ];
   }
 
   if (name.endsWith("_torch") || name === "torch") {
-    return {
-      ...base,
-      xOffset: 0.38,
-      zOffset: 0.38,
-      width: 0.24,
-      length: 0.24,
-      height: 0.72,
-      fullCube: false
-    };
+    return [
+      cubeShape({
+        xOffset: 0.38,
+        zOffset: 0.38,
+        width: 0.24,
+        length: 0.24,
+        height: 0.72,
+        fullCube: false,
+        cutout: true,
+        alpha
+      })
+    ];
   }
 
-  return base;
+  if (name === "iron_bars" || name.endsWith("_glass_pane")) {
+    return paneShapes(block);
+  }
+
+  if (name.endsWith("_trapdoor")) {
+    return trapdoorShapes(block);
+  }
+
+  if (name.endsWith("_fence") || name.endsWith("_wall")) {
+    return fenceShapes(block);
+  }
+
+  if (name === "hopper") {
+    return hopperShapes();
+  }
+
+  if (name === "chest" || name === "trapped_chest" || name === "barrel") {
+    return [
+      cubeShape({
+        xOffset: 0.0625,
+        zOffset: 0.0625,
+        width: 0.875,
+        height: 0.875,
+        length: 0.875,
+        fullCube: false,
+        alpha
+      })
+    ];
+  }
+
+  return [cubeShape({ alpha })];
 }
 
 function blockFaces(block, shape, ox, oy) {
@@ -190,8 +428,8 @@ function blockFaces(block, shape, ox, oy) {
 
   return {
     top: [t(p010), t(p110), t(p111), t(p011)],
-    left: [t(p011), t(p111), t(p101), t(p001)],
-    right: [t(p110), t(p010), t(p000), t(p100)]
+    south: [t(p011), t(p111), t(p101), t(p001)],
+    east: [t(p111), t(p110), t(p100), t(p101)]
   };
 }
 
@@ -257,13 +495,16 @@ export async function renderIsometric(schematic, options) {
       rx: block.x - bounds.minX,
       ry: block.y - bounds.minY,
       rz: block.z - bounds.minZ,
-      shape: shapeFor(block)
+      shapes: shapesFor(block)
     }))
     .sort((a, b) => a.rx + a.rz + a.ry - (b.rx + b.rz + b.ry));
 
   const solidOccupied = new Set(
     normalized
-      .filter((block) => block.shape.fullCube && block.shape.alpha === 1)
+      .filter(
+        (block) =>
+          block.shapes.length === 1 && block.shapes[0].fullCube && block.shapes[0].alpha === 1
+      )
       .map((block) => `${block.rx},${block.ry},${block.rz}`)
   );
 
@@ -271,32 +512,46 @@ export async function renderIsometric(schematic, options) {
 
   for (const block of normalized) {
     const faces = await textures.getFaces(block.name);
-    const shape = block.shape;
-    const geometry = blockFaces(block, shape, ox, oy);
-    const hasAbove = solidOccupied.has(`${block.rx},${block.ry + 1},${block.rz}`);
-    const hasLeftNeighbor = solidOccupied.has(`${block.rx},${block.ry},${block.rz + 1}`);
-    const hasRightNeighbor = solidOccupied.has(`${block.rx + 1},${block.ry},${block.rz}`);
+    const shapes = [...block.shapes].sort(
+      (a, b) => a.xOffset + a.zOffset + a.yOffset - (b.xOffset + b.zOffset + b.yOffset)
+    );
 
-    if (!shape.topOnly && (!shape.fullCube || !hasLeftNeighbor)) {
-      drawTexturedFace(
-        ctx,
-        sideTextureFor(block, faces, "left"),
-        geometry.left,
-        FACE_SHADE.left,
-        shape.alpha
-      );
-    }
-    if (!shape.topOnly && (!shape.fullCube || !hasRightNeighbor)) {
-      drawTexturedFace(
-        ctx,
-        sideTextureFor(block, faces, "right"),
-        geometry.right,
-        FACE_SHADE.right,
-        shape.alpha
-      );
-    }
-    if (!shape.fullCube || !hasAbove) {
-      drawTexturedFace(ctx, topTextureFor(block, faces), geometry.top, FACE_SHADE.top, shape.alpha);
+    for (const shape of shapes) {
+      const geometry = blockFaces(block, shape, ox, oy);
+      const hasAbove = solidOccupied.has(`${block.rx},${block.ry + 1},${block.rz}`);
+      const hasSouthNeighbor = solidOccupied.has(`${block.rx},${block.ry},${block.rz + 1}`);
+      const hasEastNeighbor = solidOccupied.has(`${block.rx + 1},${block.ry},${block.rz}`);
+
+      if (!shape.topOnly && (!shape.fullCube || !hasSouthNeighbor)) {
+        drawTexturedFace(
+          ctx,
+          sideTextureFor(block, faces, "south"),
+          geometry.south,
+          FACE_SHADE.left,
+          shape.alpha,
+          !shape.cutout
+        );
+      }
+      if (!shape.topOnly && (!shape.fullCube || !hasEastNeighbor)) {
+        drawTexturedFace(
+          ctx,
+          sideTextureFor(block, faces, "east"),
+          geometry.east,
+          FACE_SHADE.right,
+          shape.alpha,
+          !shape.cutout
+        );
+      }
+      if (!shape.fullCube || !hasAbove) {
+        drawTexturedFace(
+          ctx,
+          topTextureFor(block, faces),
+          geometry.top,
+          FACE_SHADE.top,
+          shape.alpha,
+          !shape.cutout
+        );
+      }
     }
   }
 
