@@ -36,11 +36,13 @@ const specialTextures = {
   },
   piston: {
     top: ["piston_top.png", "piston_top_normal.png"],
-    side: ["piston_side.png"]
+    side: ["piston_side.png"],
+    front: ["piston_top.png", "piston_top_normal.png"]
   },
   sticky_piston: {
     top: ["piston_top_sticky.png", "piston_top.png"],
-    side: ["piston_side.png"]
+    side: ["piston_side.png"],
+    front: ["piston_top_sticky.png", "piston_top.png"]
   },
   observer: {
     top: ["observer_top.png"],
@@ -48,12 +50,19 @@ const specialTextures = {
     front: ["observer_front.png"]
   },
   dispenser: {
-    top: ["dispenser_front.png"],
-    side: ["dispenser_side.png", "furnace_side.png"]
+    top: ["furnace_top.png"],
+    side: ["furnace_side.png"],
+    front: ["dispenser_front.png", "dispenser_front_vertical.png"]
   },
   dropper: {
-    top: ["dropper_front.png"],
-    side: ["dropper_side.png", "furnace_side.png"]
+    top: ["furnace_top.png"],
+    side: ["furnace_side.png"],
+    front: ["dropper_front.png", "dropper_front_vertical.png"]
+  },
+  hopper: {
+    top: ["hopper_top.png"],
+    side: ["hopper_outside.png"],
+    front: ["hopper_outside.png"]
   },
   note_block: {
     top: ["note_block.png"],
