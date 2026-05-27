@@ -133,6 +133,65 @@ function tintCanvas(image, color) {
   return canvas;
 }
 
+function firstAnimationFrame(image) {
+  if (!image.width || !image.height) return image;
+  if (image.height <= image.width || image.height % image.width !== 0) return image;
+
+  const canvas = createCanvas(image.width, image.width);
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(image, 0, 0, image.width, image.width, 0, 0, image.width, image.width);
+  return canvas;
+}
+
+function normalizeRotation(rotation = 0) {
+  return (((Number(rotation) || 0) % 360) + 360) % 360;
+}
+
+function rotateCanvas(source, rotation = 0) {
+  const normalized = normalizeRotation(rotation);
+  if (normalized === 0) return source;
+
+  const swap = normalized === 90 || normalized === 270;
+  const canvas = createCanvas(
+    swap ? source.height : source.width,
+    swap ? source.width : source.height
+  );
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((normalized * Math.PI) / 180);
+  ctx.drawImage(source, -source.width / 2, -source.height / 2);
+  return canvas;
+}
+
+function cropTextureRegion(image, uv, rotation = 0) {
+  if (!uv || uv.length !== 4) return rotateCanvas(image, rotation);
+
+  const [u0, v0, u1, v1] = uv.map(Number);
+  if (![u0, v0, u1, v1].every(Number.isFinite)) return rotateCanvas(image, rotation);
+
+  const scaleX = image.width / 16;
+  const scaleY = image.height / 16;
+  const sourceX = Math.max(0, Math.min(u0, u1) * scaleX);
+  const sourceY = Math.max(0, Math.min(v0, v1) * scaleY);
+  const sourceWidth = Math.max(1, Math.abs(u1 - u0) * scaleX);
+  const sourceHeight = Math.max(1, Math.abs(v1 - v0) * scaleY);
+  const width = Math.max(1, Math.round(sourceWidth));
+  const height = Math.max(1, Math.round(sourceHeight));
+  const flipX = u1 < u0;
+  const flipY = v1 < v0;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.save();
+  ctx.translate(flipX ? width : 0, flipY ? height : 0);
+  ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width, height);
+  ctx.restore();
+  return rotateCanvas(canvas, rotation);
+}
+
 function textureFileName(textureRef) {
   const raw =
     typeof textureRef === "object"
@@ -159,7 +218,7 @@ export class TextureManager {
 
     for (const candidate of candidates.map((file) => path.join(this.textureRoot, file))) {
       if (fs.existsSync(candidate)) {
-        const image = await loadImage(candidate);
+        const image = firstAnimationFrame(await loadImage(candidate));
         this.cache.set(cacheKey, image);
         return image;
       }
@@ -189,6 +248,26 @@ export class TextureManager {
     const tinted = tintCanvas(image, tint);
     this.cache.set(cacheKey, tinted);
     return tinted;
+  }
+
+  async loadTextureRegion(textureRef, fallbackKey = "stone", options = {}) {
+    const rotation = normalizeRotation(options.rotation || 0);
+    const uv = Array.isArray(options.uv) ? options.uv.map(Number) : null;
+    if (!uv && rotation === 0) {
+      return this.loadTextureRef(textureRef, fallbackKey, options);
+    }
+
+    const fileName = textureFileName(textureRef);
+    const tint = options.tint ? "#c11212" : null;
+    const cacheKey = `region:${fileName || fallbackKey}:${tint || "plain"}:${uv?.join(",") || "full"}:${rotation}`;
+    if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
+
+    const image = await this.loadTextureRef(textureRef, fallbackKey, {
+      tint: options.tint
+    });
+    const region = cropTextureRegion(image, uv, rotation);
+    this.cache.set(cacheKey, region);
+    return region;
   }
 
   faceCandidates(blockName, face) {
