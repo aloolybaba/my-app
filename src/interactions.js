@@ -16,6 +16,7 @@ import {
 import { logger } from "./logger.js";
 
 const cooldowns = new Map();
+const ticketCreationLocks = new Set();
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -91,16 +92,52 @@ async function createTicketCategory(guild, creator, overwrites) {
 }
 
 async function deleteTicketChannelAndCategory(channel) {
-  const parent = channel.parent;
   await channel.delete("Ticket closed").catch(() => {});
-  if (
-    config.createTicketCategories &&
-    parent?.type === ChannelType.GuildCategory &&
-    parent.name?.startsWith("schematic-ticket-") &&
-    parent.children.cache.size === 0
-  ) {
-    await parent.delete("Ticket category closed").catch(() => {});
+}
+
+function buildSharedCategoryOverwrites(guild) {
+  return [
+    {
+      id: guild.roles.everyone.id,
+      deny: [PermissionFlagsBits.ViewChannel]
+    },
+    ...config.staffRoleIds.map((roleId) => ({
+      id: roleId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageMessages
+      ]
+    }))
+  ];
+}
+
+async function getSharedTicketCategoryId(guild) {
+  if (config.categoryId) {
+    const configured = await guild.channels.fetch(config.categoryId).catch(() => null);
+    if (configured?.type === ChannelType.GuildCategory) return configured.id;
+    logger.warn("Configured CATEGORY_ID is not a category or could not be fetched", {
+      categoryId: config.categoryId
+    });
   }
+
+  const channels = await guild.channels.fetch();
+  const existing = channels.find(
+    (channel) =>
+      channel?.type === ChannelType.GuildCategory &&
+      channel.name === config.ticketCategoryName
+  );
+  if (existing) return existing.id;
+
+  const category = await guild.channels.create({
+    name: config.ticketCategoryName,
+    type: ChannelType.GuildCategory,
+    permissionOverwrites: buildSharedCategoryOverwrites(guild),
+    reason: "Shared schematic ticket category"
+  });
+  return category.id;
 }
 
 function ticketFromChannel(channel) {
@@ -273,100 +310,112 @@ async function updateRenderedSubmissionMessage(channel, ticket) {
 }
 
 async function createTicket(interaction) {
-  const now = Date.now();
-  const last = cooldowns.get(interaction.user.id) || 0;
-  if (now - last < config.ticketCooldownSeconds * 1000) {
+  if (ticketCreationLocks.has(interaction.user.id)) {
     await interaction.reply({
-      content: "Please wait before creating another submission ticket.",
+      content: "I am already creating your ticket. Please wait a moment.",
       flags: MessageFlags.Ephemeral
     });
     return;
   }
 
-  const existing = queries.getOpenTicketByCreator.get(interaction.user.id);
-  if (existing) {
-    const existingChannel = await interaction.guild.channels
-      .fetch(existing.channel_id)
-      .catch(() => null);
-    if (!existingChannel) {
-      queries.closeTicket.run(Date.now(), existing.channel_id);
-    } else {
-    await interaction.reply({
-      content: `You already have an open ticket: <#${existing.channel_id}>`,
-      flags: MessageFlags.Ephemeral
-    });
-    return;
-    }
-  }
-
-  const guild = interaction.guild;
-  const existingDiscordChannel = await findOpenTicketChannel(guild, interaction.user.id);
-  if (existingDiscordChannel) {
-    await interaction.reply({
-      content: `You already have an open ticket: <#${existingDiscordChannel.id}>`,
-      flags: MessageFlags.Ephemeral
-    });
-    return;
-  }
-
-  const channelName = `schematic-${cleanChannelName(interaction.user.username)}`;
-  const overwrites = buildTicketOverwrites(guild, interaction.user.id);
-  const category = await createTicketCategory(guild, interaction.user, overwrites);
-
-  const channel = await guild.channels.create({
-    name: channelName,
-    type: ChannelType.GuildText,
-    parent: category?.id || config.categoryId || undefined,
-    permissionOverwrites: overwrites,
-    topic: `Schematic ticket for ${interaction.user.tag} (${interaction.user.id})`
-  });
-
-  const ticketResult = queries.createTicket.run(
-    guild.id,
-    channel.id,
-    interaction.user.id,
-    now
-  );
-  const ticketId = Number(ticketResult.lastInsertRowid);
-
-  queries.createSubmission.run(
-    ticketId,
-    null,
-    null,
-    null,
-    null,
-    null,
-    now,
-    now
-  );
-
-  cooldowns.set(interaction.user.id, now);
-
-  const embed = new EmbedBuilder()
-    .setColor(brand.gold)
-    .setTitle("Schematic Submission")
-    .setDescription(
-      [
-        `Welcome ${interaction.user}.`,
-        "",
-        "Click **Start Information** when you are ready to fill out schematic details.",
-        "Use **Add Extra Details** after that for positives, negatives, and instructions.",
-        "Upload your `.litematic` file in this channel.",
-        "The bot will parse the file, render an isometric preview, and generate the publish embed automatically."
-      ].join("\n")
-    )
-    .setTimestamp();
-
-  await channel.send({
-    content: `<@${interaction.user.id}>`,
-    embeds: [embed],
-    components: [buildTicketControls()]
-  });
-
-  await interaction.reply({
-    content: `Your submission ticket is ready: <#${channel.id}>`,
+  ticketCreationLocks.add(interaction.user.id);
+  await interaction.deferReply({
     flags: MessageFlags.Ephemeral
   });
+
+  const now = Date.now();
+  try {
+    const last = cooldowns.get(interaction.user.id) || 0;
+    if (now - last < config.ticketCooldownSeconds * 1000) {
+      await interaction.editReply("Please wait before creating another submission ticket.");
+      return;
+    }
+
+    const existing = queries.getOpenTicketByCreator.get(interaction.user.id);
+    if (existing) {
+      const existingChannel = await interaction.guild.channels
+        .fetch(existing.channel_id)
+        .catch(() => null);
+      if (!existingChannel) {
+        queries.closeTicket.run(Date.now(), existing.channel_id);
+      } else {
+        await interaction.editReply(`You already have an open ticket: <#${existing.channel_id}>`);
+        return;
+      }
+    }
+
+    const guild = interaction.guild;
+    const existingDiscordChannel = await findOpenTicketChannel(guild, interaction.user.id);
+    if (existingDiscordChannel) {
+      await interaction.editReply(
+        `You already have an open ticket: <#${existingDiscordChannel.id}>`
+      );
+      return;
+    }
+
+    cooldowns.set(interaction.user.id, now);
+
+    const channelName = `schematic-${cleanChannelName(interaction.user.username)}`;
+    const overwrites = buildTicketOverwrites(guild, interaction.user.id);
+    const categoryId = await getSharedTicketCategoryId(guild).catch((error) => {
+      logger.warn("Shared ticket category could not be prepared", {
+        error: error.message
+      });
+      return null;
+    });
+
+    const channel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      parent: categoryId || undefined,
+      permissionOverwrites: overwrites,
+      topic: `Schematic ticket for ${interaction.user.tag} (${interaction.user.id})`
+    });
+
+    const ticketResult = queries.createTicket.run(
+      guild.id,
+      channel.id,
+      interaction.user.id,
+      now
+    );
+    const ticketId = Number(ticketResult.lastInsertRowid);
+
+    queries.createSubmission.run(
+      ticketId,
+      null,
+      null,
+      null,
+      null,
+      null,
+      now,
+      now
+    );
+
+    const embed = new EmbedBuilder()
+      .setColor(brand.gold)
+      .setTitle("Schematic Submission")
+      .setDescription(
+        [
+          `Welcome ${interaction.user}.`,
+          "",
+          "Click **Start Information** when you are ready to fill out schematic details.",
+          "Use **Add Extra Details** after that for positives, negatives, and instructions.",
+          "Upload your `.litematic` file in this channel.",
+          "The bot will parse the file, render an isometric preview, and generate the publish embed automatically."
+        ].join("\n")
+      )
+      .setTimestamp();
+
+    await channel.send({
+      content: `<@${interaction.user.id}>`,
+      embeds: [embed],
+      components: [buildTicketControls()]
+    });
+
+    await interaction.editReply(`Your submission ticket is ready: <#${channel.id}>`);
+  } finally {
+    ticketCreationLocks.delete(interaction.user.id);
+  }
 }
 
 async function saveMainSubmission(interaction) {
