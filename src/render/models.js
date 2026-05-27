@@ -209,6 +209,7 @@ export class BlockModelManager {
       for (const element of model.elements) {
         const box = rotateBoxY(element.from || [0, 0, 0], element.to || [16, 16, 16], yRotation);
         const textures = {};
+        const tints = {};
         const decorate = element.shade !== false;
         const faces = element.faces || {};
 
@@ -216,6 +217,7 @@ export class BlockModelManager {
           const rotatedFace = rotateFaceY(faceName, yRotation);
           if (!visibleFaces.has(rotatedFace)) continue;
           textures[rotatedFace] = resolveTexture(face.texture, model.textures || {});
+          if (face.tintindex !== undefined) tints[rotatedFace] = face.tintindex;
         }
 
         if (Object.keys(textures).length === 0) continue;
@@ -232,7 +234,8 @@ export class BlockModelManager {
           alpha: block.name.includes("glass") || block.name === "water" ? 0.68 : 1,
           decorate,
           cutout: Object.values(textures).some((texture) => isCutout(block.name, texture)),
-          textures
+          textures,
+          tints
         });
       }
     }
