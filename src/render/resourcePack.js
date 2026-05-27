@@ -42,6 +42,8 @@ const criticalTextureFiles = [
   "comparator_on.png"
 ];
 
+const minimumTextureCount = 500;
+
 const criticalModelFiles = [
   ["blockstates", "hopper.json"],
   ["blockstates", "observer.json"],
@@ -95,6 +97,15 @@ async function hasPngFiles(dir) {
     return entries.some((entry) => entry.toLowerCase().endsWith(".png"));
   } catch {
     return false;
+  }
+}
+
+async function countPngFiles(dir) {
+  try {
+    const entries = await fsp.readdir(dir);
+    return entries.filter((entry) => entry.toLowerCase().endsWith(".png")).length;
+  } catch {
+    return 0;
   }
 }
 
@@ -243,18 +254,27 @@ async function flattenPngDirectory(sourceDir, targetDir) {
 export async function prepareResourcePack(textureRoot, textureZipUrl) {
   const targetDir = path.resolve(process.cwd(), textureRoot);
   const texturesReady = await hasPngFiles(targetDir);
+  const textureCount = await countPngFiles(targetDir);
   const criticalTexturesReady = texturesReady && (await hasCriticalTextures(targetDir));
   const modelsReady = await hasModelFiles(textureRoot);
-  if (criticalTexturesReady && modelsReady) {
-    logger.info("Texture folder ready", { targetDir });
+  if (criticalTexturesReady && textureCount >= minimumTextureCount && modelsReady) {
+    logger.info("Texture folder ready", { targetDir, textureCount });
     return;
   }
 
-  if (texturesReady && (!modelsReady || !criticalTexturesReady)) {
+  if (texturesReady && (!modelsReady || !criticalTexturesReady || textureCount < minimumTextureCount)) {
     try {
       await downloadGithubRenderAssets(targetDir, textureZipUrl);
-      if ((await hasModelFiles(textureRoot)) && (await hasCriticalTextures(targetDir))) {
-        logger.info("Minecraft render assets ready", { targetDir });
+      const updatedTextureCount = await countPngFiles(targetDir);
+      if (
+        (await hasModelFiles(textureRoot)) &&
+        (await hasCriticalTextures(targetDir)) &&
+        updatedTextureCount >= minimumTextureCount
+      ) {
+        logger.info("Minecraft render assets ready", {
+          targetDir,
+          textureCount: updatedTextureCount
+        });
         return;
       }
     } catch (error) {
