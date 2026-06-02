@@ -119,7 +119,16 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function tintColorFor(key) {
+  const name = String(key || "").toLowerCase();
+  if (name.includes("redstone")) return "#c11212";
+  if (name.includes("grass") || name.includes("leaves") || name.includes("vine")) return "#5fa64c";
+  if (name.includes("water")) return "#4a74d6";
+  return "#ffffff";
+}
+
 function tintCanvas(image, color) {
+  if (color === "#ffffff") return image;
   const canvas = createCanvas(image.width || 16, image.height || 16);
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
@@ -233,7 +242,7 @@ export class TextureManager {
   async loadTextureRef(textureRef, fallbackKey = "stone", options = {}) {
     const fileName = textureFileName(textureRef);
     const base = fileName ? path.basename(fileName) : null;
-    const tint = options.tint ? "#c11212" : null;
+    const tint = options.tint ? tintColorFor(fallbackKey) : null;
     const cacheKey = `texture:${fileName || fallbackKey}:${tint || "plain"}`;
     if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
 
