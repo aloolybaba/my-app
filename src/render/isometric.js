@@ -643,8 +643,6 @@ export async function renderIsometric(schematic, options) {
       .map((block) => `${block.rx},${block.ry},${block.rz}`)
   );
 
-  drawShadow(ctx, normalized, ox, oy);
-
   const drawFaces = [];
   let serial = 0;
   for (const block of normalized) {
