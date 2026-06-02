@@ -13,10 +13,9 @@ function unwrapLong(value) {
 
 function dimensionInfo(value) {
   const signed = Number(value);
-  const direction = signed < 0 ? -1 : 1;
   return {
     size: Math.abs(signed),
-    direction
+    startOffset: signed < 0 ? signed + 1 : 0
   };
 }
 
@@ -83,9 +82,9 @@ export async function parseLitematic(filePath) {
       const localZ = Math.floor(i / width) % length;
       const localY = Math.floor(i / (width * length));
       const block = {
-        x: originX + localX * xDim.direction,
-        y: originY + localY * yDim.direction,
-        z: originZ + localZ * zDim.direction,
+        x: originX + xDim.startOffset + localX,
+        y: originY + yDim.startOffset + localY,
+        z: originZ + zDim.startOffset + localZ,
         name,
         properties: blockState.Properties || blockState.properties || {}
       };
