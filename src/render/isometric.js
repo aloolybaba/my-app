@@ -377,6 +377,86 @@ function renderShapesFor(block, modelShapes) {
   return modelShapes || shapesFor(block);
 }
 
+function planksTextureFor(blockName) {
+  const wood = String(blockName)
+    .replace(/^minecraft:/, "")
+    .replace(/_wall_sign$|_sign$|_hanging_sign$/, "");
+  return `block/${wood}_planks`;
+}
+
+function shulkerBoxShapes() {
+  return [
+    cubeShape({
+      xOffset: 0.0625,
+      zOffset: 0.0625,
+      width: 0.875,
+      height: 0.875,
+      length: 0.875,
+      fullCube: false
+    })
+  ];
+}
+
+function wallSignShapes(block) {
+  const texture = planksTextureFor(block.name);
+  const facing = block.properties?.facing || "south";
+  const common = {
+    yOffset: 0.25,
+    height: 0.5,
+    fullCube: false,
+    cutout: false,
+    decorate: true,
+    textures: {
+      up: texture,
+      south: texture,
+      east: texture
+    }
+  };
+
+  if (facing === "east") {
+    return [
+      cubeShape({
+        ...common,
+        xOffset: 0.9375,
+        zOffset: 0.125,
+        width: 0.0625,
+        length: 0.75
+      })
+    ];
+  }
+  if (facing === "west") {
+    return [
+      cubeShape({
+        ...common,
+        xOffset: 0,
+        zOffset: 0.125,
+        width: 0.0625,
+        length: 0.75
+      })
+    ];
+  }
+  if (facing === "north") {
+    return [
+      cubeShape({
+        ...common,
+        xOffset: 0.125,
+        zOffset: 0,
+        width: 0.75,
+        length: 0.0625
+      })
+    ];
+  }
+  return [
+    cubeShape({
+      ...common,
+      xOffset: 0.125,
+      zOffset: 0.9375,
+      width: 0.75,
+      length: 0.0625
+    })
+  ];
+}
+
 function trapdoorShapes(block) {
   const props = block.properties || {};
   if (boolProp(props, "open")) {
@@ -441,6 +521,14 @@ function shapesFor(block) {
 
   if (name === "redstone_wire") {
     return redstoneWireShapes(block);
+  }
+
+  if (name === "shulker_box" || name.endsWith("_shulker_box")) {
+    return shulkerBoxShapes(block);
+  }
+
+  if (name.endsWith("_wall_sign")) {
+    return wallSignShapes(block);
   }
 
   if (name.endsWith("_slab") && props.type !== "double") {
@@ -739,6 +827,10 @@ function integerScaleFor(width, height) {
   return Math.max(1, Math.min(widthScale, heightScale));
 }
 
+function blockSortValue(block) {
+  return block.rx + block.rz + block.ry;
+}
+
 export async function renderIsometric(schematic, options) {
   const textures = new TextureManager(options.textureRoot);
   const models = new BlockModelManager(options.textureRoot);
@@ -757,17 +849,27 @@ export async function renderIsometric(schematic, options) {
   const oy = margin - projected.minY;
   const normalized = (
     await Promise.all(schematic.blocks.map(async (block) => {
-      const modelShapes = await models.elementsFor(block).catch(() => null);
+      const normalizedBlock = {
+        ...block,
+        rx: block.x - bounds.minX,
+        ry: block.y - bounds.minY,
+        rz: block.z - bounds.minZ
+      };
+      const modelShapes = await models.elementsFor(normalizedBlock).catch(() => null);
       return {
-      ...block,
-      rx: block.x - bounds.minX,
-      ry: block.y - bounds.minY,
-      rz: block.z - bounds.minZ,
-        shapes: renderShapesFor(block, modelShapes)
+        ...normalizedBlock,
+        shapes: renderShapesFor(normalizedBlock, modelShapes)
       };
     }))
   )
-    .sort((a, b) => a.rx + a.rz + a.ry - (b.rx + b.rz + b.ry));
+    .sort(
+      (a, b) =>
+        blockSortValue(a) - blockSortValue(b) ||
+        a.ry - b.ry ||
+        a.rz - b.rz ||
+        a.rx - b.rx ||
+        a.name.localeCompare(b.name)
+    );
 
   const solidOccupied = new Set(
     normalized
