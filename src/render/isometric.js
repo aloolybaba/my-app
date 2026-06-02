@@ -656,11 +656,6 @@ export async function renderIsometric(schematic, options) {
     for (const shape of shapes) {
       if (shape.modelFaces?.length) {
         for (const face of shape.modelFaces) {
-          if (face.cullface) {
-            const cullKey = neighborKey(block, face.cullface);
-            if (cullKey && solidOccupied.has(cullKey)) continue;
-          }
-
           const texture = await textures.loadTextureRegion(face.texture, block.name, {
             tint: face.tint,
             uv: face.uv,
