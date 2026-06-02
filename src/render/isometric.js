@@ -440,6 +440,123 @@ function blockFaces(block, shape, ox, oy) {
   };
 }
 
+function modelFaceGeometry(block, face, ox, oy) {
+  return face.vertices.map((vertex) => {
+    const projected = iso(
+      block.rx + vertex.x,
+      block.ry + vertex.y,
+      block.rz + vertex.z
+    );
+    return {
+      x: projected.x + ox,
+      y: projected.y + oy
+    };
+  });
+}
+
+function modelFaceShade(face) {
+  const normal = face.normal || { x: 0, y: 1, z: 0 };
+  if (normal.y > 0.55) return FACE_SHADE.top;
+  if (normal.z >= normal.x) return FACE_SHADE.left;
+  return FACE_SHADE.right;
+}
+
+function shapeFaceVertices(block, shape, faceName) {
+  const x0 = block.rx + shape.xOffset;
+  const y0 = block.ry + shape.yOffset;
+  const z0 = block.rz + shape.zOffset;
+  const x1 = x0 + shape.width;
+  const y1 = y0 + shape.height;
+  const z1 = z0 + shape.length;
+
+  switch (faceName) {
+    case "top":
+      return [
+        { x: x0, y: y1, z: z0 },
+        { x: x1, y: y1, z: z0 },
+        { x: x1, y: y1, z: z1 },
+        { x: x0, y: y1, z: z1 }
+      ];
+    case "south":
+      return [
+        { x: x0, y: y1, z: z1 },
+        { x: x1, y: y1, z: z1 },
+        { x: x1, y: y0, z: z1 },
+        { x: x0, y: y0, z: z1 }
+      ];
+    case "east":
+      return [
+        { x: x1, y: y1, z: z1 },
+        { x: x1, y: y1, z: z0 },
+        { x: x1, y: y0, z: z0 },
+        { x: x1, y: y0, z: z1 }
+      ];
+    default:
+      return [];
+  }
+}
+
+function projectVertices(vertices, ox, oy) {
+  return vertices.map((vertex) => {
+    const point = iso(vertex.x, vertex.y, vertex.z);
+    return {
+      x: point.x + ox,
+      y: point.y + oy
+    };
+  });
+}
+
+function modelWorldVertices(block, face) {
+  return face.vertices.map((vertex) => ({
+    x: block.rx + vertex.x,
+    y: block.ry + vertex.y,
+    z: block.rz + vertex.z
+  }));
+}
+
+function faceBias(faceName) {
+  if (faceName === "up" || faceName === "top") return 0.35;
+  if (faceName === "east") return 0.18;
+  if (faceName === "south") return 0.16;
+  return 0;
+}
+
+function faceDepth(vertices, faceName) {
+  const average = vertices.reduce(
+    (sum, vertex) => ({
+      x: sum.x + vertex.x,
+      y: sum.y + vertex.y,
+      z: sum.z + vertex.z
+    }),
+    { x: 0, y: 0, z: 0 }
+  );
+  const count = Math.max(1, vertices.length);
+  const x = average.x / count;
+  const y = average.y / count;
+  const z = average.z / count;
+  return x + z + y * 2 + faceBias(faceName);
+}
+
+function neighborKey(block, faceName) {
+  switch (faceName) {
+    case "up":
+    case "top":
+      return `${block.rx},${block.ry + 1},${block.rz}`;
+    case "south":
+      return `${block.rx},${block.ry},${block.rz + 1}`;
+    case "east":
+      return `${block.rx + 1},${block.ry},${block.rz}`;
+    case "north":
+      return `${block.rx},${block.ry},${block.rz - 1}`;
+    case "west":
+      return `${block.rx - 1},${block.ry},${block.rz}`;
+    case "down":
+      return `${block.rx},${block.ry - 1},${block.rz}`;
+    default:
+      return null;
+  }
+}
+
 function drawShadow(ctx, blocks, ox, oy) {
   const ground = new Set(blocks.map((block) => `${block.rx},${block.rz}`));
   ctx.save();
@@ -528,6 +645,8 @@ export async function renderIsometric(schematic, options) {
 
   drawShadow(ctx, normalized, ox, oy);
 
+  const drawFaces = [];
+  let serial = 0;
   for (const block of normalized) {
     const faces = await textures.getFaces(block.name);
     const shapes = [...block.shapes].sort(
@@ -535,6 +654,32 @@ export async function renderIsometric(schematic, options) {
     );
 
     for (const shape of shapes) {
+      if (shape.modelFaces?.length) {
+        for (const face of shape.modelFaces) {
+          if (face.cullface) {
+            const cullKey = neighborKey(block, face.cullface);
+            if (cullKey && solidOccupied.has(cullKey)) continue;
+          }
+
+          const texture = await textures.loadTextureRegion(face.texture, block.name, {
+            tint: face.tint,
+            uv: face.uv,
+            rotation: face.rotation
+          });
+          const vertices = modelWorldVertices(block, face);
+          drawFaces.push({
+            texture,
+            points: projectVertices(vertices, ox, oy),
+            shade: modelFaceShade(face),
+            alpha: shape.alpha,
+            decorate: shape.decorate !== false && !shape.cutout,
+            depth: faceDepth(vertices, face.face),
+            serial: serial++
+          });
+        }
+        continue;
+      }
+
       const geometry = blockFaces(block, shape, ox, oy);
       const hasAbove = solidOccupied.has(`${block.rx},${block.ry + 1},${block.rz}`);
       const hasSouthNeighbor = solidOccupied.has(`${block.rx},${block.ry},${block.rz + 1}`);
@@ -548,14 +693,16 @@ export async function renderIsometric(schematic, options) {
               rotation: shape.faceRotations?.south
             })
           : sideTextureFor(block, faces, "south");
-        drawTexturedFace(
-          ctx,
+        const vertices = shapeFaceVertices(block, shape, "south");
+        drawFaces.push({
           texture,
-          geometry.south,
-          FACE_SHADE.left,
-          shape.alpha,
-          shape.decorate !== false && !shape.cutout
-        );
+          points: geometry.south,
+          shade: FACE_SHADE.left,
+          alpha: shape.alpha,
+          decorate: shape.decorate !== false && !shape.cutout,
+          depth: faceDepth(vertices, "south"),
+          serial: serial++
+        });
       }
       if (!shape.topOnly && (!shape.fullCube || !hasEastNeighbor)) {
         const texture = shape.textures?.east
@@ -565,14 +712,16 @@ export async function renderIsometric(schematic, options) {
               rotation: shape.faceRotations?.east
             })
           : sideTextureFor(block, faces, "east");
-        drawTexturedFace(
-          ctx,
+        const vertices = shapeFaceVertices(block, shape, "east");
+        drawFaces.push({
           texture,
-          geometry.east,
-          FACE_SHADE.right,
-          shape.alpha,
-          shape.decorate !== false && !shape.cutout
-        );
+          points: geometry.east,
+          shade: FACE_SHADE.right,
+          alpha: shape.alpha,
+          decorate: shape.decorate !== false && !shape.cutout,
+          depth: faceDepth(vertices, "east"),
+          serial: serial++
+        });
       }
       if (!shape.fullCube || !hasAbove) {
         const texture = shape.textures?.up
@@ -582,16 +731,30 @@ export async function renderIsometric(schematic, options) {
               rotation: shape.faceRotations?.up
             })
           : topTextureFor(block, faces);
-        drawTexturedFace(
-          ctx,
+        const vertices = shapeFaceVertices(block, shape, "top");
+        drawFaces.push({
           texture,
-          geometry.top,
-          FACE_SHADE.top,
-          shape.alpha,
-          shape.decorate !== false && !shape.cutout
-        );
+          points: geometry.top,
+          shade: FACE_SHADE.top,
+          alpha: shape.alpha,
+          decorate: shape.decorate !== false && !shape.cutout,
+          depth: faceDepth(vertices, "top"),
+          serial: serial++
+        });
       }
     }
+  }
+
+  drawFaces.sort((left, right) => left.depth - right.depth || left.serial - right.serial);
+  for (const face of drawFaces) {
+    drawTexturedFace(
+      ctx,
+      face.texture,
+      face.points,
+      face.shade,
+      face.alpha,
+      face.decorate
+    );
   }
 
   const rawPng = canvas.toBuffer("image/png");
