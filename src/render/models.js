@@ -40,7 +40,7 @@ function hashString(value) {
   return hash >>> 0;
 }
 
-function selectModelApplication(value, seed = "") {
+function selectWeightedApplication(value, seed = "") {
   const entries = asArray(value).filter(Boolean);
   if (entries.length === 0) return [];
   const totalWeight = entries.reduce(
@@ -53,6 +53,15 @@ function selectModelApplication(value, seed = "") {
     if (target < 0) return [entry];
   }
   return [entries[0]];
+}
+
+function selectMultipartApplications(value, seed = "") {
+  const entries = asArray(value).filter(Boolean);
+  if (entries.length === 0) return [];
+  if (entries.some((entry) => entry.weight !== undefined)) {
+    return selectWeightedApplication(entries, seed);
+  }
+  return entries;
 }
 
 function propsMatch(properties, query) {
@@ -333,10 +342,6 @@ function rotateNormal(normal, elementRotation, xRotation, yRotation) {
   return rotateAroundAxis(afterX, "y", -yRotation);
 }
 
-function cameraCanSee(normal) {
-  return normal.y > 0.001 || normal.x > 0.001 || normal.z > 0.001;
-}
-
 function textureValue(value) {
   if (!value) return null;
   if (typeof value === "string") return value;
@@ -434,7 +439,7 @@ export class BlockModelManager {
     if (blockstate.variants) {
       const entries = Object.entries(blockstate.variants);
       const matched = entries.find(([key]) => variantMatches(properties, key)) || entries[0];
-      return selectModelApplication(matched?.[1], `${blockSeed}:${matched?.[0] || ""}`);
+      return selectWeightedApplication(matched?.[1], `${blockSeed}:${matched?.[0] || ""}`);
     }
 
     if (blockstate.multipart) {
@@ -442,7 +447,7 @@ export class BlockModelManager {
         .map((part, index) => ({ part, index }))
         .filter(({ part }) => propsMatch(properties, part.when))
         .flatMap(({ part, index }) =>
-          selectModelApplication(part.apply, `${blockSeed}:multipart:${index}`)
+          selectMultipartApplications(part.apply, `${blockSeed}:multipart:${index}`)
         );
     }
 
@@ -505,7 +510,6 @@ export class BlockModelManager {
               xRotation,
               yRotation
             );
-            if (!cameraCanSee(normal)) continue;
             modelFaces.push({
               face: rotatedFace,
               texture: textures[rotatedFace],
