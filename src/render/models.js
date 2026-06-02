@@ -55,6 +55,17 @@ function selectModelApplication(value, seed = "") {
   return [entries[0]];
 }
 
+function allModelApplications(value) {
+  return asArray(value).filter(Boolean);
+}
+
+function sortedStateSeed(properties = {}) {
+  return Object.entries(properties)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join(",");
+}
+
 function propsMatch(properties, query) {
   if (!query) return true;
   if (query.OR) return asArray(query.OR).some((item) => propsMatch(properties, item));
@@ -430,7 +441,10 @@ export class BlockModelManager {
 
   selectApplications(blockstate, block) {
     const properties = block.properties || {};
-    const blockSeed = `${block.name}:${block.x},${block.y},${block.z}`;
+    const x = block.rx ?? block.x ?? 0;
+    const y = block.ry ?? block.y ?? 0;
+    const z = block.rz ?? block.z ?? 0;
+    const blockSeed = `${block.name}:${x},${y},${z}:${sortedStateSeed(properties)}`;
     if (blockstate.variants) {
       const entries = Object.entries(blockstate.variants);
       const matched = entries.find(([key]) => variantMatches(properties, key)) || entries[0];
@@ -441,9 +455,7 @@ export class BlockModelManager {
       return blockstate.multipart
         .map((part, index) => ({ part, index }))
         .filter(({ part }) => propsMatch(properties, part.when))
-        .flatMap(({ part, index }) =>
-          selectModelApplication(part.apply, `${blockSeed}:multipart:${index}`)
-        );
+        .flatMap(({ part }) => allModelApplications(part.apply));
     }
 
     return [];
