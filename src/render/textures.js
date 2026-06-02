@@ -267,7 +267,7 @@ export class TextureManager {
     }
 
     const fileName = textureFileName(textureRef);
-    const tint = options.tint ? "#c11212" : null;
+    const tint = options.tint ? tintColorFor(fallbackKey) : null;
     const cacheKey = `region:${fileName || fallbackKey}:${tint || "plain"}:${uv?.join(",") || "full"}:${rotation}`;
     if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
 
