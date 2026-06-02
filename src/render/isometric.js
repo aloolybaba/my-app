@@ -245,6 +245,138 @@ function hopperShapes() {
   ];
 }
 
+function redstoneWireShapes(block) {
+  const props = block.properties || {};
+  const connects = (side) => props[side] === "side" || props[side] === "up";
+  const powered = Number(props.power || 0) > 0;
+  const common = {
+    yOffset: 0.018,
+    height: 0.04,
+    topOnly: true,
+    fullCube: false,
+    cutout: true,
+    alpha: 1,
+    decorate: false,
+    forceTop: true,
+    tints: { up: 0 }
+  };
+  const shapes = [];
+  const north = connects("north");
+  const south = connects("south");
+  const west = connects("west");
+  const east = connects("east");
+
+  if (!north && !south && !west && !east) {
+    shapes.push(
+      cubeShape({
+        ...common,
+        xOffset: 0,
+        zOffset: 0,
+        width: 1,
+        length: 1,
+        textures: { up: "block/redstone_dust_dot" }
+      })
+    );
+    return shapes;
+  }
+
+  if ((north || south) && (west || east)) {
+    shapes.push(
+      cubeShape({
+        ...common,
+        xOffset: 0,
+        zOffset: 0,
+        width: 1,
+        length: 1,
+        textures: { up: "block/redstone_dust_dot" }
+      })
+    );
+  }
+
+  if (north) {
+    shapes.push(
+      cubeShape({
+        ...common,
+        xOffset: 0,
+        zOffset: 0,
+        width: 1,
+        length: 0.5,
+        textures: { up: "block/redstone_dust_line0" },
+        uvs: { up: [0, 0, 16, 8] }
+      })
+    );
+  }
+  if (south) {
+    shapes.push(
+      cubeShape({
+        ...common,
+        xOffset: 0,
+        zOffset: 0.5,
+        width: 1,
+        length: 0.5,
+        textures: { up: "block/redstone_dust_line0" },
+        uvs: { up: [0, 8, 16, 16] }
+      })
+    );
+  }
+  if (west) {
+    shapes.push(
+      cubeShape({
+        ...common,
+        xOffset: 0,
+        zOffset: 0,
+        width: 0.5,
+        length: 1,
+        textures: { up: "block/redstone_dust_line1" },
+        uvs: { up: [0, 0, 8, 16] }
+      })
+    );
+  }
+  if (east) {
+    shapes.push(
+      cubeShape({
+        ...common,
+        xOffset: 0.5,
+        zOffset: 0,
+        width: 0.5,
+        length: 1,
+        textures: { up: "block/redstone_dust_line1" },
+        uvs: { up: [8, 0, 16, 16] }
+      })
+    );
+  }
+
+  return shapes.map((shape) => ({
+    ...shape,
+    alpha: powered ? 1 : 0.82
+  }));
+}
+
+function redstoneModelSideShapes(modelShapes) {
+  return (modelShapes || [])
+    .map((shape) => {
+      const modelFaces = (shape.modelFaces || []).filter(
+        (face) => Math.abs(face.normal?.y || 0) < 0.25
+      );
+      return modelFaces.length
+        ? {
+            ...shape,
+            modelFaces,
+            decorate: false,
+            cutout: true
+          }
+        : null;
+    })
+    .filter(Boolean);
+}
+
+function renderShapesFor(block, modelShapes) {
+  if (block.name === "redstone_wire") {
+    return [...redstoneModelSideShapes(modelShapes), ...redstoneWireShapes(block)];
+  }
+  return modelShapes || shapesFor(block);
+}
+
 function trapdoorShapes(block) {
   const props = block.properties || {};
   if (boolProp(props, "open")) {
@@ -305,7 +437,11 @@ function shapesFor(block) {
       ? 0.68
       : name === "slime_block" || name === "honey_block"
         ? 0.82
-        : 1;
+      : 1;
+
+  if (name === "redstone_wire") {
+    return redstoneWireShapes(block);
+  }
 
   if (name.endsWith("_slab") && props.type !== "double") {
     return [
@@ -319,7 +455,6 @@ function shapesFor(block) {
   }
 
   if (
-    name === "redstone_wire" ||
     name.endsWith("_carpet") ||
     name.endsWith("_pressure_plate") ||
     name.endsWith("_rail")
@@ -628,7 +763,7 @@ export async function renderIsometric(schematic, options) {
       rx: block.x - bounds.minX,
       ry: block.y - bounds.minY,
       rz: block.z - bounds.minZ,
-        shapes: modelShapes || shapesFor(block)
+        shapes: renderShapesFor(block, modelShapes)
       };
     }))
   )
@@ -736,7 +871,7 @@ export async function renderIsometric(schematic, options) {
           shade: FACE_SHADE.top,
           alpha: shape.alpha,
           decorate: shape.decorate !== false && !shape.cutout,
-          depth: faceDepth(vertices, "top"),
+          depth: faceDepth(vertices, "top") + (shape.forceTop ? 0.9 : 0),
           serial: serial++
         });
       }
