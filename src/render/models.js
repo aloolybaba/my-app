@@ -55,11 +55,11 @@ function selectWeightedApplication(value, seed = "") {
   return [entries[0]];
 }
 
-function selectMultipartApplications(value, seed = "") {
+function selectMultipartApplications(value) {
   const entries = asArray(value).filter(Boolean);
   if (entries.length === 0) return [];
   if (entries.some((entry) => entry.weight !== undefined)) {
-    return selectWeightedApplication(entries, seed);
+    return selectWeightedApplication(entries);
   }
   return entries;
 }
@@ -192,156 +192,6 @@ function faceTextureRotation(rotatedFace, face, application) {
   return normalizeRotation(rotation);
 }
 
-function faceVertices(faceName, from, to) {
-  const [x0, y0, z0] = from;
-  const [x1, y1, z1] = to;
-  switch (faceName) {
-    case "up":
-      return [
-        { x: x0, y: y1, z: z0 },
-        { x: x1, y: y1, z: z0 },
-        { x: x1, y: y1, z: z1 },
-        { x: x0, y: y1, z: z1 }
-      ];
-    case "down":
-      return [
-        { x: x0, y: y0, z: z1 },
-        { x: x1, y: y0, z: z1 },
-        { x: x1, y: y0, z: z0 },
-        { x: x0, y: y0, z: z0 }
-      ];
-    case "south":
-      return [
-        { x: x0, y: y1, z: z1 },
-        { x: x1, y: y1, z: z1 },
-        { x: x1, y: y0, z: z1 },
-        { x: x0, y: y0, z: z1 }
-      ];
-    case "north":
-      return [
-        { x: x1, y: y1, z: z0 },
-        { x: x0, y: y1, z: z0 },
-        { x: x0, y: y0, z: z0 },
-        { x: x1, y: y0, z: z0 }
-      ];
-    case "east":
-      return [
-        { x: x1, y: y1, z: z1 },
-        { x: x1, y: y1, z: z0 },
-        { x: x1, y: y0, z: z0 },
-        { x: x1, y: y0, z: z1 }
-      ];
-    case "west":
-      return [
-        { x: x0, y: y1, z: z0 },
-        { x: x0, y: y1, z: z1 },
-        { x: x0, y: y0, z: z1 },
-        { x: x0, y: y0, z: z0 }
-      ];
-    default:
-      return [];
-  }
-}
-
-function faceNormal(faceName) {
-  switch (faceName) {
-    case "up":
-      return { x: 0, y: 1, z: 0 };
-    case "down":
-      return { x: 0, y: -1, z: 0 };
-    case "south":
-      return { x: 0, y: 0, z: 1 };
-    case "north":
-      return { x: 0, y: 0, z: -1 };
-    case "east":
-      return { x: 1, y: 0, z: 0 };
-    case "west":
-      return { x: -1, y: 0, z: 0 };
-    default:
-      return { x: 0, y: 0, z: 0 };
-  }
-}
-
-function rotateAroundAxis(point, axis, angleDegrees) {
-  const angle = (Number(angleDegrees || 0) * Math.PI) / 180;
-  const sin = Math.sin(angle);
-  const cos = Math.cos(angle);
-  if (axis === "x") {
-    return {
-      x: point.x,
-      y: point.y * cos - point.z * sin,
-      z: point.y * sin + point.z * cos
-    };
-  }
-  if (axis === "y") {
-    return {
-      x: point.x * cos + point.z * sin,
-      y: point.y,
-      z: -point.x * sin + point.z * cos
-    };
-  }
-  if (axis === "z") {
-    return {
-      x: point.x * cos - point.y * sin,
-      y: point.x * sin + point.y * cos,
-      z: point.z
-    };
-  }
-  return point;
-}
-
-function rescaleFactor(angleDegrees) {
-  const angle = Math.abs(Number(angleDegrees || 0));
-  if (Math.abs(angle - 22.5) < 0.001) return 1 / Math.cos(Math.PI / 8);
-  if (Math.abs(angle - 45) < 0.001) return Math.SQRT2;
-  return 1;
-}
-
-function applyElementRotation(point, rotation) {
-  if (!rotation?.axis || !rotation?.angle) return point;
-  const origin = rotation.origin || [8, 8, 8];
-  const relative = {
-    x: point.x - origin[0],
-    y: point.y - origin[1],
-    z: point.z - origin[2]
-  };
-  let rotated = rotateAroundAxis(relative, rotation.axis, rotation.angle);
-  if (rotation.rescale) {
-    const scale = rescaleFactor(rotation.angle);
-    rotated = {
-      x: rotation.axis === "x" ? rotated.x : rotated.x * scale,
-      y: rotation.axis === "y" ? rotated.y : rotated.y * scale,
-      z: rotation.axis === "z" ? rotated.z : rotated.z * scale
-    };
-  }
-  return {
-    x: rotated.x + origin[0],
-    y: rotated.y + origin[1],
-    z: rotated.z + origin[2]
-  };
-}
-
-function applyBlockRotationToModelPoint(point, xRotation, yRotation) {
-  return rotatePoint(
-    {
-      x: point.x / 16,
-      y: point.y / 16,
-      z: point.z / 16
-    },
-    xRotation,
-    yRotation
-  );
-}
-
-function rotateNormal(normal, elementRotation, xRotation, yRotation) {
-  let rotated = normal;
-  if (elementRotation?.axis && elementRotation?.angle) {
-    rotated = rotateAroundAxis(rotated, elementRotation.axis, elementRotation.angle);
-  }
-  const afterX = rotateAroundAxis(rotated, "x", -xRotation);
-  return rotateAroundAxis(afterX, "y", -yRotation);
-}
-
 function textureValue(value) {
   if (!value) return null;
   if (typeof value === "string") return value;
@@ -444,11 +294,8 @@ export class BlockModelManager {
 
     if (blockstate.multipart) {
       return blockstate.multipart
-        .map((part, index) => ({ part, index }))
-        .filter(({ part }) => propsMatch(properties, part.when))
-        .flatMap(({ part, index }) =>
-          selectMultipartApplications(part.apply, `${blockSeed}:multipart:${index}`)
-        );
+        .filter((part) => propsMatch(properties, part.when))
+        .flatMap((part) => selectMultipartApplications(part.apply));
     }
 
     return [];
@@ -484,60 +331,26 @@ export class BlockModelManager {
         const faces = element.faces || {};
         const from = element.from || [0, 0, 0];
         const to = element.to || [16, 16, 16];
-        const modelFaces = [];
-        const fullCube =
-          box.xOffset === 0 &&
-          box.yOffset === 0 &&
-          box.zOffset === 0 &&
-          box.width === 1 &&
-          box.height === 1 &&
-          box.length === 1;
 
         for (const [faceName, face] of Object.entries(faces)) {
           const rotatedFace = rotateFace(faceName, xRotation, yRotation);
-          const rotatedCullFace = face.cullface
-            ? rotateFace(face.cullface, xRotation, yRotation)
-            : null;
+          if (!visibleFaces.has(rotatedFace)) continue;
           textures[rotatedFace] = resolveTexture(face.texture, model.textures || {});
           uvs[rotatedFace] = faceUv(faceName, face, from, to);
           faceRotations[rotatedFace] = faceTextureRotation(rotatedFace, face, application);
           if (face.tintindex !== undefined) tints[rotatedFace] = face.tintindex;
-
-          if (!fullCube) {
-            const normal = rotateNormal(
-              faceNormal(faceName),
-              element.rotation,
-              xRotation,
-              yRotation
-            );
-            modelFaces.push({
-              face: rotatedFace,
-              texture: textures[rotatedFace],
-              tint: face.tintindex !== undefined,
-              uv: uvs[rotatedFace],
-              rotation: faceRotations[rotatedFace],
-              cullface: rotatedCullFace,
-              normal,
-              vertices: faceVertices(faceName, from, to).map((point) =>
-                applyBlockRotationToModelPoint(
-                  applyElementRotation(point, element.rotation),
-                  xRotation,
-                  yRotation
-                )
-              )
-            });
-          } else if (!visibleFaces.has(rotatedFace)) {
-            delete textures[rotatedFace];
-            delete uvs[rotatedFace];
-            delete faceRotations[rotatedFace];
-            delete tints[rotatedFace];
-          }
         }
 
-        if (Object.keys(textures).length === 0 && modelFaces.length === 0) continue;
+        if (Object.keys(textures).length === 0) continue;
         output.push({
           ...box,
-          fullCube,
+          fullCube:
+            box.xOffset === 0 &&
+            box.yOffset === 0 &&
+            box.zOffset === 0 &&
+            box.width === 1 &&
+            box.height === 1 &&
+            box.length === 1,
           topOnly: false,
           alpha: alphaForBlock(block.name),
           decorate,
@@ -545,8 +358,7 @@ export class BlockModelManager {
           textures,
           tints,
           uvs,
-          faceRotations,
-          modelFaces
+          faceRotations
         });
       }
     }
