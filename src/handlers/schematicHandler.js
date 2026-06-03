@@ -5,11 +5,9 @@ import fetch from 'node-fetch';
 import { AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { parseLitematic } from '../renderer/litematicParser.js';
 import { renderIsometric } from '../renderer/isometricRenderer.js';
-import { basicEmbed, buildSchematicEmbed, COLORS } from '../utils/embeds.js';
+import { basicEmbed, buildSchematicEmbed } from '../utils/embeds.js';
 import { ticketData } from './ticketHandler.js';
 import { log } from '../utils/logger.js';
-
-const MAX_RENDER_VOLUME = 200_000;
 
 export async function handleLitematicMessage(message) {
   if (message.author.bot || !/^schematic-/.test(message.channel.name)) return;
@@ -45,14 +43,7 @@ export async function processLitematicAttachment(attachment, id, data = {}) {
 
   try {
     const parsed = await parseLitematic(tempPath);
-    const shouldRender = parsed.volume.total <= MAX_RENDER_VOLUME;
-    const embed = buildSchematicEmbed(data, parsed, shouldRender);
-
-    if (!shouldRender) {
-      embed.setDescription('This schematic is larger than 200,000 blocks, so rendering was skipped.');
-      return { embeds: [embed], files: [] };
-    }
-
+    const embed = buildSchematicEmbed(data, parsed, true);
     const buffer = await renderIsometric(parsed);
     const file = new AttachmentBuilder(buffer, { name: 'preview.png' });
     return { embeds: [embed], files: [file] };
