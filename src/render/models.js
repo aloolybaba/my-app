@@ -2,7 +2,6 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
-const visibleFaces = new Set(["up", "south", "east"]);
 const cutoutNames = [
   "bars",
   "pane",
@@ -53,10 +52,6 @@ function selectModelApplication(value, seed = "") {
     if (target < 0) return [entry];
   }
   return [entries[0]];
-}
-
-function allModelApplications(value) {
-  return asArray(value).filter(Boolean);
 }
 
 function sortedStateSeed(properties = {}) {
@@ -348,6 +343,11 @@ function cameraCanSee(normal) {
   return normal.y > 0.001 || normal.x > 0.001 || normal.z > 0.001;
 }
 
+function shouldRenderModelFace(fullCube, normal) {
+  if (fullCube) return cameraCanSee(normal);
+  return normal.y > -0.75;
+}
+
 function textureValue(value) {
   if (!value) return null;
   if (typeof value === "string") return value;
@@ -455,7 +455,9 @@ export class BlockModelManager {
       return blockstate.multipart
         .map((part, index) => ({ part, index }))
         .filter(({ part }) => propsMatch(properties, part.when))
-        .flatMap(({ part }) => allModelApplications(part.apply));
+        .flatMap(({ part, index }) =>
+          selectModelApplication(part.apply, `${blockSeed}:multipart:${index}`)
+        );
     }
 
     return [];
@@ -501,45 +503,42 @@ export class BlockModelManager {
           box.length === 1;
 
         for (const [faceName, face] of Object.entries(faces)) {
+          const normal = rotateNormal(
+            faceNormal(faceName),
+            element.rotation,
+            xRotation,
+            yRotation
+          );
+          if (!shouldRenderModelFace(fullCube, normal)) continue;
+
           const rotatedFace = rotateFace(faceName, xRotation, yRotation);
           const rotatedCullFace = face.cullface
             ? rotateFace(face.cullface, xRotation, yRotation)
             : null;
-          textures[rotatedFace] = resolveTexture(face.texture, model.textures || {});
-          uvs[rotatedFace] = faceUv(faceName, face, from, to);
-          faceRotations[rotatedFace] = faceTextureRotation(rotatedFace, face, application);
+          const texture = resolveTexture(face.texture, model.textures || {});
+          const uv = faceUv(faceName, face, from, to);
+          const rotation = faceTextureRotation(rotatedFace, face, application);
+          textures[rotatedFace] = texture;
+          uvs[rotatedFace] = uv;
+          faceRotations[rotatedFace] = rotation;
           if (face.tintindex !== undefined) tints[rotatedFace] = face.tintindex;
 
-          if (!fullCube) {
-            const normal = rotateNormal(
-              faceNormal(faceName),
-              element.rotation,
-              xRotation,
-              yRotation
-            );
-            if (!cameraCanSee(normal)) continue;
-            modelFaces.push({
-              face: rotatedFace,
-              texture: textures[rotatedFace],
-              tint: face.tintindex !== undefined,
-              uv: uvs[rotatedFace],
-              rotation: faceRotations[rotatedFace],
-              cullface: rotatedCullFace,
-              normal,
-              vertices: faceVertices(faceName, from, to).map((point) =>
-                applyBlockRotationToModelPoint(
-                  applyElementRotation(point, element.rotation),
-                  xRotation,
-                  yRotation
-                )
+          modelFaces.push({
+            face: rotatedFace,
+            texture,
+            tint: face.tintindex !== undefined,
+            uv,
+            rotation,
+            cullface: rotatedCullFace,
+            normal,
+            vertices: faceVertices(faceName, from, to).map((point) =>
+              applyBlockRotationToModelPoint(
+                applyElementRotation(point, element.rotation),
+                xRotation,
+                yRotation
               )
-            });
-          } else if (!visibleFaces.has(rotatedFace)) {
-            delete textures[rotatedFace];
-            delete uvs[rotatedFace];
-            delete faceRotations[rotatedFace];
-            delete tints[rotatedFace];
-          }
+            )
+          });
         }
 
         if (Object.keys(textures).length === 0 && modelFaces.length === 0) continue;
