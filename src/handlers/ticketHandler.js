@@ -4,6 +4,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  EmbedBuilder,
   ModalBuilder,
   PermissionFlagsBits,
   TextInputBuilder,
@@ -160,16 +161,33 @@ export async function askCloseConfirmation(interaction) {
 
 export async function closeTicket(interaction) {
   await interaction.deferReply({ ephemeral: true });
+  const channel = interaction.channel;
   const openerId = getOpenerId(interaction.channel);
-  const transcriptMessage = await saveTranscript(interaction.channel);
-  const transcriptLink = transcriptMessage?.url ?? 'Transcript saved.';
+  const transcript = await saveTranscript(channel, interaction.user);
 
   if (openerId) {
     const opener = await interaction.client.users.fetch(openerId).catch(() => null);
-    await opener?.send(`Your schematic ticket ${interaction.channel.name} was closed. Transcript: ${transcriptLink}`).catch(() => null);
+    if (opener) {
+      const dmAttachment = new AttachmentBuilder(Buffer.from(transcript.text, 'utf8'), {
+        name: `${channel.name}-transcript.txt`,
+      });
+      const dmEmbed = new EmbedBuilder()
+        .setTitle('Your ticket has been closed')
+        .setColor(COLORS.amber)
+        .setDescription(`Your schematic submission ticket **#${channel.name}** was closed.\nThe full transcript is attached below.`)
+        .addFields(
+          { name: 'Closed by', value: interaction.user.toString(), inline: true },
+          { name: 'Closed at', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+        )
+        .setFooter({ text: 'Crackers Schematics' });
+
+      await opener.send({ embeds: [dmEmbed], files: [dmAttachment] }).catch(() => {
+        log.warn(`Could not DM transcript to ${opener.tag}; DMs may be closed.`);
+      });
+    }
   }
 
-  await logChannel(interaction.guild, 'Ticket Closed', `${interaction.user} closed ${interaction.channel}. Transcript: ${transcriptLink}`);
+  await logChannel(interaction.guild, 'Ticket Closed', `${interaction.user} closed ${channel}. Transcript saved with ${transcript.messageCount} message(s).`);
   ticketData.delete(interaction.channelId);
   await interaction.editReply('Ticket closed. This channel will be deleted in 5 seconds.');
   setTimeout(() => interaction.channel.delete('Ticket closed').catch(err => log.warn('Failed to delete ticket', err)), 5000);
@@ -221,7 +239,32 @@ async function logChannel(guild, title, description) {
   }
 }
 
-async function saveTranscript(channel) {
+async function saveTranscript(channel, closedBy) {
+  const transcriptText = await buildTranscript(channel);
+  const messageCount = Number(transcriptText.match(/End of transcript - (\d+) message\(s\)/)?.[1] ?? 0);
+  const attachment = new AttachmentBuilder(Buffer.from(transcriptText, 'utf8'), {
+    name: `${channel.name}-transcript.txt`,
+    description: `Transcript for ${channel.name}`,
+  });
+  const transcriptChannel = await channel.guild.channels.fetch(process.env.TRANSCRIPTS_CHANNEL_ID);
+  if (!transcriptChannel?.isTextBased()) return { message: null, text: transcriptText, messageCount };
+
+  const transcriptEmbed = new EmbedBuilder()
+    .setTitle('Ticket Transcript')
+    .setColor(COLORS.amber)
+    .addFields(
+      { name: 'Channel', value: `#${channel.name}`, inline: true },
+      { name: 'Closed by', value: closedBy.toString(), inline: true },
+      { name: 'Messages', value: `${messageCount}`, inline: true },
+      { name: 'Date', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false },
+    )
+    .setFooter({ text: 'Crackers Schematics' });
+
+  const message = await transcriptChannel.send({ embeds: [transcriptEmbed], files: [attachment] });
+  return { message, text: transcriptText, messageCount };
+}
+
+async function buildTranscript(channel) {
   const messages = [];
   let before;
   while (messages.length < 500) {
@@ -231,15 +274,55 @@ async function saveTranscript(channel) {
     before = batch.last().id;
   }
 
-  const text = messages
-    .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
-    .map(message => `[${message.createdAt.toISOString()}] ${message.author.tag}: ${message.cleanContent || '[embed/attachment]'}`)
-    .join('\n');
+  const sorted = messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+  const lines = [];
 
-  const attachment = new AttachmentBuilder(Buffer.from(text || 'No messages.', 'utf8'), {
-    name: `${channel.name}-transcript.txt`,
-  });
-  const transcriptChannel = await channel.guild.channels.fetch(process.env.TRANSCRIPTS_CHANNEL_ID);
-  if (!transcriptChannel?.isTextBased()) return null;
-  return transcriptChannel.send({ content: `Transcript for ${channel.name}`, files: [attachment] });
+  lines.push('============================================================');
+  lines.push('  SCHEMATIC TICKET TRANSCRIPT');
+  lines.push(`  Channel : #${channel.name}`);
+  lines.push(`  Server  : ${channel.guild.name}`);
+  lines.push(`  Date    : ${new Date().toUTCString()}`);
+  lines.push('============================================================');
+  lines.push('');
+
+  for (const msg of sorted) {
+    const time = msg.createdAt.toUTCString();
+    const author = msg.author.username;
+    const isBot = msg.author.bot ? ' [BOT]' : '';
+
+    lines.push(`-- ${author}${isBot} | ${time}`);
+
+    if (msg.content) {
+      let content = msg.content;
+      for (const [id, member] of msg.mentions.members ?? []) {
+        content = content.replaceAll(`<@${id}>`, `@${member.displayName}`);
+        content = content.replaceAll(`<@!${id}>`, `@${member.displayName}`);
+      }
+      lines.push(`   ${content}`);
+    }
+
+    for (const embed of msg.embeds) {
+      lines.push(`   [Embed] ${embed.title ?? '(no title)'}`);
+      if (embed.description) {
+        lines.push(`     ${embed.description.split('\n').join('\n     ')}`);
+      }
+      for (const field of embed.fields ?? []) {
+        lines.push(`     - ${field.name}: ${field.value}`);
+      }
+    }
+
+    for (const att of msg.attachments.values()) {
+      lines.push(`   [Attachment] ${att.name} (${(att.size / 1024).toFixed(1)} KB)`);
+      lines.push(`   ${att.url}`);
+    }
+
+    lines.push('------------------------------------------------------------');
+    lines.push('');
+  }
+
+  lines.push('============================================================');
+  lines.push(`  End of transcript - ${sorted.length} message(s)`);
+  lines.push('============================================================');
+
+  return lines.join('\n');
 }
