@@ -16,7 +16,16 @@ export const commandData = [
     .setDescription("Close the current schematic ticket."),
   new SlashCommandBuilder()
     .setName("render-status")
-    .setDescription("Show schematic render queue status.")
+    .setDescription("Show schematic render queue status."),
+  new SlashCommandBuilder()
+    .setName("render")
+    .setDescription("Render a .litematic schematic preview.")
+    .addAttachmentOption((option) =>
+      option
+        .setName("schematic")
+        .setDescription("The .litematic schematic file to render.")
+        .setRequired(true)
+    )
 ].map((command) => command.toJSON());
 
 export async function registerGuildCommands() {
