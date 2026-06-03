@@ -11,6 +11,7 @@ const REQUIRED_ENV = [
 ];
 
 export function loadEnv() {
+  process.env.TICKET_CATEGORY_ID ??= '1508998798515638282';
   process.env.CREATE_TICKET_CATEGORIES ??= 'false';
   process.env.TICKET_CATEGORY_NAME ??= 'Schematic Tickets';
 
@@ -30,6 +31,7 @@ export function loadEnv() {
     staffRoleIds,
     logsChannelId: process.env.LOGS_CHANNEL_ID,
     transcriptsChannelId: process.env.TRANSCRIPTS_CHANNEL_ID,
+    ticketCategoryId: process.env.TICKET_CATEGORY_ID,
     createTicketCategories: process.env.CREATE_TICKET_CATEGORIES === 'true',
     ticketCategoryName: process.env.TICKET_CATEGORY_NAME,
   };
