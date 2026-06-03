@@ -5,6 +5,9 @@ import {
   MessageFlags,
   PermissionFlagsBits
 } from "discord.js";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { config } from "./config.js";
 import { queries } from "./database/db.js";
 import { brand, ids, buildTicketControls, refreshPanel } from "./panel.js";
@@ -18,6 +21,8 @@ import { logger } from "./logger.js";
 const cooldowns = new Map();
 const ticketCreationLocks = new Map();
 const ticketCreationLockMs = 45_000;
+const commandUploadDir = path.join(process.cwd(), "data", "uploads");
+const commandRenderDir = path.join(process.cwd(), "data", "renders");
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -25,6 +30,26 @@ function delay(ms) {
 
 function createJitter(min = 900, max = 2200) {
   return Math.floor(min + Math.random() * (max - min));
+}
+
+async function downloadAttachment(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download schematic: HTTP ${response.status}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
+function attachmentLooksLikeLitematic(attachment) {
+  const values = [
+    attachment?.name,
+    attachment?.url,
+    attachment?.proxyURL,
+    attachment?.contentType
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+  return values.some((value) => value.includes(".litematic"));
 }
 
 function isTicketCreationLocked(userId) {
@@ -208,6 +233,20 @@ function buildRenderedSubmissionEmbed(submission, creatorId, imageUrl = "attachm
     .setTimestamp();
 }
 
+function buildStandaloneRenderEmbed(result, imageUrl = "attachment://render.png") {
+  return new EmbedBuilder()
+    .setColor(brand.gold)
+    .setTitle("Rendered Schematic Preview")
+    .setDescription(
+      [
+        `Size: \`${result.size.width} x ${result.size.height} x ${result.size.length}\``,
+        `Volume: \`${result.nonAirVolume}/${result.boundingVolume}\``
+      ].join("\n")
+    )
+    .setImage(imageUrl)
+    .setTimestamp();
+}
+
 function newestMessage(messages) {
   return [...messages.values()].sort((left, right) => {
     const timeDiff = right.createdTimestamp - left.createdTimestamp;
@@ -291,13 +330,10 @@ async function updateRenderedSubmissionMessage(channel, ticket) {
 
   const key = `renderMessage:${ticket.id}`;
   const saved = queries.getSetting.get(key)?.value;
-  if (!saved) return null;
-
-  const message = await channel.messages.fetch(saved).catch(() => null);
-  if (!message) return null;
+  let message = saved ? await channel.messages.fetch(saved).catch(() => null) : null;
 
   try {
-    const existingImageUrl = message.embeds?.[0]?.image?.url;
+    const existingImageUrl = message?.embeds?.[0]?.image?.url;
     if (existingImageUrl) {
       await message.edit({
         embeds: [buildRenderedSubmissionEmbed(submission, ticket.creator_id, existingImageUrl)]
@@ -306,10 +342,19 @@ async function updateRenderedSubmissionMessage(channel, ticket) {
     }
 
     const file = new AttachmentBuilder(submission.render_path, { name: "render.png" });
-    await message.edit({
-      embeds: [buildRenderedSubmissionEmbed(submission, ticket.creator_id)],
-      files: [file]
-    });
+    if (message) {
+      await message.edit({
+        embeds: [buildRenderedSubmissionEmbed(submission, ticket.creator_id)],
+        files: [file]
+      });
+    } else {
+      message = await channel.send({
+        content: "Rendered schematic preview:",
+        embeds: [buildRenderedSubmissionEmbed(submission, ticket.creator_id)],
+        files: [file]
+      });
+      queries.setSetting.run(key, message.id);
+    }
     return message;
   } catch (error) {
     logger.warn("Rendered submission message could not be refreshed", {
@@ -618,6 +663,86 @@ async function handleModal(interaction) {
   }
 }
 
+async function handleRenderCommand(interaction, renderQueue) {
+  const attachment = interaction.options.getAttachment("schematic", true);
+  if (!attachmentLooksLikeLitematic(attachment)) {
+    await interaction.reply({
+      content: "Please upload a file ending in `.litematic`.",
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  if (attachment.size > config.maxUploadBytes) {
+    await interaction.reply({
+      content: `That schematic is too large. Limit is ${config.maxUploadBytes} bytes.`,
+      flags: MessageFlags.Ephemeral
+    });
+    return;
+  }
+
+  await interaction.deferReply();
+
+  try {
+    await fs.mkdir(commandUploadDir, { recursive: true });
+    await fs.mkdir(commandRenderDir, { recursive: true });
+
+    const buffer = await downloadAttachment(attachment.url);
+    const sha256 = crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
+    const jobId = `command-${interaction.id}`;
+    const inputPath = path.join(commandUploadDir, `${jobId}-${sha256}.litematic`);
+    const outputPath = path.join(commandRenderDir, `${jobId}-${sha256}.png`);
+    await fs.writeFile(inputPath, buffer);
+
+    await interaction.editReply(
+      `Rendering \`${attachment.name || "schematic.litematic"}\` now...`
+    );
+
+    renderQueue.enqueue({
+      ticketId: null,
+      channelId: interaction.channelId,
+      attachmentId: jobId,
+      inputPath,
+      outputPath,
+      onDone: async (result) => {
+        await fs.access(outputPath);
+        const file = new AttachmentBuilder(outputPath, { name: "render.png" });
+        const reply = await interaction.editReply({
+          content: "Rendered schematic preview:",
+          embeds: [buildStandaloneRenderEmbed(result)],
+          files: [file]
+        });
+
+        const ticket = ticketFromChannel(interaction.channel);
+        if (ticket?.status === "open") {
+          if (!queries.getSubmissionByTicket.get(ticket.id)) {
+            const now = Date.now();
+            queries.createSubmission.run(ticket.id, null, null, null, null, null, now, now);
+          }
+          queries.updateSubmissionRender.run(
+            result.size.width,
+            result.size.height,
+            result.size.length,
+            result.nonAirVolume,
+            result.boundingVolume,
+            outputPath,
+            Date.now(),
+            ticket.id
+          );
+          queries.setSetting.run(`renderMessage:${ticket.id}`, reply.id);
+          await updateRenderedSubmissionMessage(interaction.channel, ticket);
+        }
+      },
+      onError: async (error) => {
+        await interaction.editReply(`Rendering failed: ${error.message}`);
+      }
+    });
+  } catch (error) {
+    logger.error("Render command failed", error);
+    await interaction.editReply(`Render command failed: ${error.message}`);
+  }
+}
+
 async function handleCommand(interaction, renderQueue) {
   if (interaction.commandName === "panel-refresh") {
     await interaction.deferReply({
@@ -648,6 +773,11 @@ async function handleCommand(interaction, renderQueue) {
       content: renderQueue.statusText(),
       flags: MessageFlags.Ephemeral
     });
+    return;
+  }
+
+  if (interaction.commandName === "render") {
+    await handleRenderCommand(interaction, renderQueue);
   }
 }
 
