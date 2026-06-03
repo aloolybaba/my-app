@@ -11,6 +11,9 @@ const REQUIRED_ENV = [
 ];
 
 export function loadEnv() {
+  process.env.CREATE_TICKET_CATEGORIES ??= 'false';
+  process.env.TICKET_CATEGORY_NAME ??= 'Schematic Tickets';
+
   const missing = REQUIRED_ENV.filter(key => !process.env[key]);
   if (missing.length) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
