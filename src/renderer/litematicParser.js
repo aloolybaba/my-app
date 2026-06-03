@@ -32,11 +32,12 @@ function parseRegion(region) {
   const paletteRaw = region.BlockStatePalette.value.value;
   const palette = paletteRaw.map(entry => {
     const compound = entry.value ?? entry;
-    const name = (compound.Name?.value ?? 'minecraft:air')
+    const rawName = formatRawBlockName(compound);
+    const name = rawName
       .toLowerCase()
       .split('[')[0]
       .trim();
-    return { name };
+    return { name, rawName };
   });
 
   const rawStates = region.BlockStates.value;
@@ -48,6 +49,19 @@ function parseRegion(region) {
   const oz = Number(region.Position?.value?.z?.value ?? 0);
 
   return { blocks, palette, sizeX, sizeY, sizeZ, ox, oy, oz };
+}
+
+function formatRawBlockName(compound) {
+  const name = (compound.Name?.value ?? 'minecraft:air').toLowerCase().trim();
+  const properties = compound.Properties?.value;
+  if (!properties || !Object.keys(properties).length) return name;
+
+  const state = Object.entries(properties)
+    .map(([key, value]) => `${key}=${String(value?.value ?? value).toLowerCase()}`)
+    .sort()
+    .join(',');
+
+  return `${name}[${state}]`;
 }
 
 function mergeRegions(regions) {
@@ -75,7 +89,7 @@ function mergeRegions(regions) {
   }
 
   const airIndex = 0;
-  const mergedPalette = [{ name: 'minecraft:air' }];
+  const mergedPalette = [{ name: 'minecraft:air', rawName: 'minecraft:air' }];
   const paletteMap = new Map([['minecraft:air', airIndex]]);
   const mergedBlocks = new Uint16Array(totalX * totalY * totalZ);
 
@@ -89,11 +103,14 @@ function mergeRegions(regions) {
           const paletteIndex = region.blocks[localIndex];
           if (paletteIndex === regionAirIndex || paletteIndex >= region.palette.length) continue;
 
-          const blockName = region.palette[paletteIndex].name;
+          const blockName = region.palette[paletteIndex].rawName ?? region.palette[paletteIndex].name;
           let mergedIndex = paletteMap.get(blockName);
           if (mergedIndex === undefined) {
             mergedIndex = mergedPalette.length;
-            mergedPalette.push({ name: blockName });
+            mergedPalette.push({
+              name: blockName.split('[')[0],
+              rawName: blockName,
+            });
             paletteMap.set(blockName, mergedIndex);
           }
 
