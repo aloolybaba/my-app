@@ -261,41 +261,54 @@ function redstoneWireShapes(block) {
     tints: { up: 0 }
   };
   const shapes = [];
+  const addRedstonePiece = (shape) => {
+    shapes.push(
+      cubeShape({
+        ...shape,
+        textures: shape.textures,
+        tints: { up: 0 }
+      })
+    );
+    shapes.push(
+      cubeShape({
+        ...shape,
+        yOffset: shape.yOffset + 0.003,
+        textures: { up: "block/redstone_dust_overlay" },
+        alpha: 0.9,
+        tints: undefined
+      })
+    );
+  };
   const north = connects("north");
   const south = connects("south");
   const west = connects("west");
   const east = connects("east");
 
   if (!north && !south && !west && !east) {
-    shapes.push(
-      cubeShape({
+    addRedstonePiece({
         ...common,
         xOffset: 0,
         zOffset: 0,
         width: 1,
         length: 1,
         textures: { up: "block/redstone_dust_dot" }
-      })
-    );
+      });
     return shapes;
   }
 
   if ((north || south) && (west || east)) {
-    shapes.push(
-      cubeShape({
+    addRedstonePiece({
         ...common,
         xOffset: 0,
         zOffset: 0,
         width: 1,
         length: 1,
         textures: { up: "block/redstone_dust_dot" }
-      })
-    );
+      });
   }
 
   if (north) {
-    shapes.push(
-      cubeShape({
+    addRedstonePiece({
         ...common,
         xOffset: 0,
         zOffset: 0,
@@ -303,12 +316,10 @@ function redstoneWireShapes(block) {
         length: 0.5,
         textures: { up: "block/redstone_dust_line0" },
         uvs: { up: [0, 0, 16, 8] }
-      })
-    );
+      });
   }
   if (south) {
-    shapes.push(
-      cubeShape({
+    addRedstonePiece({
         ...common,
         xOffset: 0,
         zOffset: 0.5,
@@ -316,12 +327,10 @@ function redstoneWireShapes(block) {
         length: 0.5,
         textures: { up: "block/redstone_dust_line0" },
         uvs: { up: [0, 8, 16, 16] }
-      })
-    );
+      });
   }
   if (west) {
-    shapes.push(
-      cubeShape({
+    addRedstonePiece({
         ...common,
         xOffset: 0,
         zOffset: 0,
@@ -329,12 +338,10 @@ function redstoneWireShapes(block) {
         length: 1,
         textures: { up: "block/redstone_dust_line1" },
         uvs: { up: [0, 0, 8, 16] }
-      })
-    );
+      });
   }
   if (east) {
-    shapes.push(
-      cubeShape({
+    addRedstonePiece({
         ...common,
         xOffset: 0.5,
         zOffset: 0,
@@ -342,8 +349,7 @@ function redstoneWireShapes(block) {
         length: 1,
         textures: { up: "block/redstone_dust_line1" },
         uvs: { up: [8, 0, 16, 16] }
-      })
-    );
+      });
   }
 
   return shapes.map((shape) => ({
@@ -372,7 +378,16 @@ function redstoneModelSideShapes(modelShapes) {
 
 function renderShapesFor(block, modelShapes) {
   if (block.name === "redstone_wire") {
-    return [...redstoneModelSideShapes(modelShapes), ...redstoneWireShapes(block)];
+    if (modelShapes?.length) {
+      return modelShapes.map((shape) => ({
+        ...shape,
+        forceTop: true,
+        decorate: false,
+        cutout: true,
+        alpha: 1
+      }));
+    }
+    return redstoneWireShapes(block);
   }
   return modelShapes || shapesFor(block);
 }
@@ -1096,7 +1111,7 @@ async function renderSingleIsometric(schematic, options) {
             shade: modelFaceShade(face),
             alpha: shape.alpha,
             decorate: shape.decorate !== false && !shape.cutout,
-            depth: faceDepth(vertices, face.face),
+            depth: faceDepth(vertices, face.face) + (shape.forceTop ? 0.9 : 0),
             serial: serial++
           });
         }
@@ -1222,6 +1237,10 @@ async function renderSingleIsometric(schematic, options) {
 }
 
 export async function renderIsometric(schematic, options) {
+  if (!options?.autoView) {
+    return renderSingleIsometric(schematic, options);
+  }
+
   const requestedView = Number(options?.viewRotation);
   const views = Number.isInteger(requestedView)
     ? [((requestedView % 4) + 4) % 4]
