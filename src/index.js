@@ -5,6 +5,7 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import { loadEnv } from './utils/env.js';
 import { log } from './utils/logger.js';
+import { initTextures } from './renderer/textureManager.js';
 
 loadEnv();
 
@@ -33,5 +34,6 @@ for (const file of await readdir(eventsDir)) {
   client[event.once ? 'once' : 'on'](event.name, (...args) => event.execute(...args, client));
 }
 
+await initTextures();
 client.login(process.env.DISCORD_TOKEN);
 log.info('Logging in to Discord');
