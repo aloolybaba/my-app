@@ -53,11 +53,29 @@ export const BLOCK_COLORS = {
   'minecraft:bedrock': { top: '#3C3C3C', left: '#272727', right: '#333333' },
 };
 
-export function getBlockColor(blockName) {
-  if (Object.prototype.hasOwnProperty.call(BLOCK_COLORS, blockName)) return BLOCK_COLORS[blockName];
-  const bare = blockName.replace('minecraft:', '');
+export function getBlockColor(rawName) {
+  if (!rawName) return { top: '#888888', left: '#555555', right: '#6A6A6A' };
+
+  const name = rawName.split('[')[0].trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(BLOCK_COLORS, name)) return BLOCK_COLORS[name];
+
+  const bare = name.replace('minecraft:', '');
   for (const [key, val] of Object.entries(BLOCK_COLORS)) {
-    if (val && key.includes(bare)) return val;
+    if (key === `minecraft:${bare}`) return val;
   }
-  return { top: '#FF00FF', left: '#AA00AA', right: '#CC00CC' };
+
+  for (const [key, val] of Object.entries(BLOCK_COLORS)) {
+    if (!val) continue;
+    const keyword = key.replace('minecraft:', '');
+    if (
+      bare.startsWith(keyword) ||
+      bare.endsWith(keyword) ||
+      bare.includes(`_${keyword}`) ||
+      bare.includes(`${keyword}_`)
+    ) {
+      return val;
+    }
+  }
+
+  return { top: '#888888', left: '#555555', right: '#6A6A6A' };
 }
