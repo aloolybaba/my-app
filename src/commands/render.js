@@ -13,7 +13,15 @@ export default {
     ),
 
   async execute(interaction) {
-    const attachment = interaction.options.getAttachment('file', true);
+    const attachment = interaction.options.getAttachment('file', false);
+    if (!attachment) {
+      await interaction.reply({
+        content: 'Please use `/render file:<your .litematic>` after the slash commands are refreshed.',
+        ephemeral: true,
+      });
+      return;
+    }
+
     if (!attachment.name?.toLowerCase().endsWith('.litematic')) {
       await interaction.reply({ content: 'Please attach a `.litematic` file.', ephemeral: true });
       return;
