@@ -8,7 +8,7 @@ const PADDING = 24;
 
 export async function renderIsometric(parsed) {
   const visible = [];
-  const airIndex = parsed.palette.findIndex(b => b.name === 'minecraft:air');
+  const airIndex = parsed.palette.findIndex(b => b.name.split('[')[0] === 'minecraft:air');
 
   for (let y = 0; y < parsed.size.y; y += 1) {
     for (let z = 0; z < parsed.size.z; z += 1) {
@@ -18,7 +18,9 @@ export async function renderIsometric(parsed) {
         if (paletteIndex === airIndex) continue;
         const paletteEntry = parsed.palette[paletteIndex];
         if (!paletteEntry) continue;
-        visible.push({ x, y, z, color: getBlockColor(paletteEntry.name) });
+        const colorEntry = getBlockColor(paletteEntry.name);
+        if (!colorEntry) continue;
+        visible.push({ x, y, z, color: colorEntry });
       }
     }
   }
