@@ -2,11 +2,12 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import fetch from 'node-fetch';
-import { AttachmentBuilder } from 'discord.js';
+import { AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { parseLitematic } from '../renderer/litematicParser.js';
 import { renderIsometric } from '../renderer/isometricRenderer.js';
 import { basicEmbed, buildSchematicEmbed, COLORS } from '../utils/embeds.js';
 import { ticketData } from './ticketHandler.js';
+import { log } from '../utils/logger.js';
 
 const MAX_RENDER_VOLUME = 200_000;
 
@@ -20,7 +21,21 @@ export async function handleLitematicMessage(message) {
     const result = await processLitematicAttachment(attachment, message.id, ticketData.get(message.channelId));
     await status.edit(result);
   } catch (error) {
-    await status.edit({ embeds: [basicEmbed('Render Failed', error.message, COLORS.error)], files: [], components: [] });
+    log.error('Schematic processing failed:', error);
+    await status.edit({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle('Rendering Failed')
+          .setColor(0xFF4444)
+          .setDescription(
+            `Could not process \`${attachment.name}\`.\n\n` +
+            `**Error:** \`${error.message ?? String(error)}\``,
+          )
+          .setFooter({ text: 'Check the file is a valid .litematic and try again.' }),
+      ],
+      files: [],
+      components: [],
+    });
   }
 }
 
