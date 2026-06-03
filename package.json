@@ -1,0 +1,21 @@
+{
+  "name": "crackers-schematics-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node src/deploy-commands.js",
+    "check": "node --check src/index.js && node --check src/deploy-commands.js"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "discord.js": "^14.15.0",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2",
+    "prismarine-nbt": "^2.5.0"
+  }
+}
