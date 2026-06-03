@@ -664,24 +664,20 @@ async function handleModal(interaction) {
 }
 
 async function handleRenderCommand(interaction, renderQueue) {
+  await interaction.deferReply();
+
   const attachment = interaction.options.getAttachment("schematic", true);
   if (!attachmentLooksLikeLitematic(attachment)) {
-    await interaction.reply({
-      content: "Please upload a file ending in `.litematic`.",
-      flags: MessageFlags.Ephemeral
-    });
+    await interaction.editReply("Please upload a file ending in `.litematic`.");
     return;
   }
 
   if (attachment.size > config.maxUploadBytes) {
-    await interaction.reply({
-      content: `That schematic is too large. Limit is ${config.maxUploadBytes} bytes.`,
-      flags: MessageFlags.Ephemeral
-    });
+    await interaction.editReply(
+      `That schematic is too large. Limit is ${config.maxUploadBytes} bytes.`
+    );
     return;
   }
-
-  await interaction.deferReply();
 
   try {
     await fs.mkdir(commandUploadDir, { recursive: true });
