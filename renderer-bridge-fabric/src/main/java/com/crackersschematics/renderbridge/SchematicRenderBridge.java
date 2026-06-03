@@ -120,6 +120,9 @@ public class SchematicRenderBridge implements ClientModInitializer {
             boolean renderEdge = settings.get("renderEdge").getAsBoolean();
             boolean ignoreLighting = settings.get("ignoreLighting").getAsBoolean();
             boolean cleanup = settings.get("cleanup").getAsBoolean();
+            JsonObject camera = settings.has("camera") && settings.get("camera").isJsonObject()
+                    ? settings.getAsJsonObject("camera")
+                    : new JsonObject();
 
             ServerLevel serverLevel = server.getLevel(minecraft.level.dimension());
             if (serverLevel == null) {
@@ -167,7 +170,7 @@ public class SchematicRenderBridge implements ClientModInitializer {
                             ignoreLighting
                     );
                     RendererSettings renderSettings = RendererSettings.defaultSettings.clone();
-                    autoFit(renderSettings, width, height, length, imageWidth, imageHeight);
+                    autoFit(renderSettings, width, height, length, imageWidth, imageHeight, camera);
                     renderSettings.renderEdge = renderEdge;
                     renderSettings.ignoreLighting = ignoreLighting;
                     renderSettings.applyAll(renderer);
@@ -211,22 +214,43 @@ public class SchematicRenderBridge implements ClientModInitializer {
         }
     }
 
-    private static void autoFit(RendererSettings settings, int width, int height, int length, int imageWidth, int imageHeight) {
+    private static void autoFit(RendererSettings settings, int width, int height, int length, int imageWidth, int imageHeight, JsonObject camera) {
         int longest = Math.max(width + length, Math.max(height * 2, Math.max(width, length)));
-        int scale = Math.max(8, Math.min(800, (int) Math.floor(Math.min(imageWidth, imageHeight) * 90.0 / Math.max(1, longest))));
+        double fitPadding = readDouble(camera, "fitPadding", 0.9);
+        int scale = Math.max(8, Math.min(800, (int) Math.floor(Math.min(imageWidth, imageHeight) * 100.0 * fitPadding / Math.max(1, longest))));
         settings.width = imageWidth;
         settings.height = imageHeight;
-        settings.yaw = -45;
-        settings.pitch = 30;
-        settings.roll = 0;
-        settings.scale = scale;
-        settings.x = 0;
-        settings.y = 0;
-        settings.z = 0;
+        settings.yaw = readInt(camera, "yaw", 45);
+        settings.pitch = readInt(camera, "pitch", 30);
+        settings.roll = readInt(camera, "roll", 0);
+        settings.scale = readInt(camera, "scale", scale);
+        settings.x = readInt(camera, "x", 0);
+        settings.y = readInt(camera, "y", 0);
+        settings.z = readInt(camera, "z", 0);
         settings.renderEntities = false;
         settings.renderNametags = false;
         settings.renderSelf = false;
         settings.renderParticles = false;
+    }
+
+    private static int readInt(JsonObject object, String key, int fallback) {
+        if (object.has(key) && !object.get(key).isJsonNull()) {
+            try {
+                return object.get(key).getAsInt();
+            } catch (Throwable ignored) {
+            }
+        }
+        return fallback;
+    }
+
+    private static double readDouble(JsonObject object, String key, double fallback) {
+        if (object.has(key) && !object.get(key).isJsonNull()) {
+            try {
+                return object.get(key).getAsDouble();
+            } catch (Throwable ignored) {
+            }
+        }
+        return fallback;
     }
 
     private static void runSetBlock(MinecraftServer server, BlockPos pos, String state) {
