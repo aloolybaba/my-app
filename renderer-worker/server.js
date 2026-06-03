@@ -59,6 +59,22 @@ async function exists(filePath) {
   }
 }
 
+async function waitForOutputImage(outputPath, startedAt) {
+  while (Date.now() - startedAt < jobTimeoutMs) {
+    try {
+      const stat = await fs.stat(outputPath);
+      if (stat.size > 0) {
+        return await fs.readFile(outputPath);
+      }
+    } catch {
+      // The bridge may mark the job done just before the GPU capture writes the file.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error("Bridge marked job done but output.png was not readable.");
+}
+
 function blockStateString(block) {
   const name = block.name.includes(":") ? block.name : `minecraft:${block.name}`;
   const entries = Object.entries(block.properties || {}).sort(([left], [right]) =>
@@ -86,11 +102,11 @@ async function waitForJob(jobDir, startedAt) {
     const status = await readJson(statusPath).catch(() => null);
     if (status?.status === "done") {
       if (!(await exists(outputPath))) {
-        throw new Error("Bridge marked job done but output.png was not written.");
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
       return {
         status,
-        imageBuffer: await fs.readFile(outputPath)
+        imageBuffer: await waitForOutputImage(outputPath, startedAt)
       };
     }
     if (status?.status === "error") {
