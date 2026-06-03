@@ -831,7 +831,195 @@ function blockSortValue(block) {
   return block.rx + block.rz + block.ry;
 }
 
-export async function renderIsometric(schematic, options) {
+const horizontalDirections = ["north", "east", "south", "west"];
+
+function rotateDirection(value, turns) {
+  const index = horizontalDirections.indexOf(value);
+  if (index === -1) return value;
+  return horizontalDirections[(index + turns) % horizontalDirections.length];
+}
+
+function rotateCornerShape(value, turns) {
+  if (!value || !value.includes("_")) return value;
+  if (value === "north_south") return turns % 2 === 0 ? "north_south" : "east_west";
+  if (value === "east_west") return turns % 2 === 0 ? "east_west" : "north_south";
+  if (!value.startsWith("ascending_")) {
+    const parts = value.split("_");
+    if (parts.length === 2 && parts.every((part) => horizontalDirections.includes(part))) {
+      const rotated = parts.map((part) => rotateDirection(part, turns));
+      const key = new Set(rotated);
+      if (key.has("north") && key.has("east")) return "north_east";
+      if (key.has("south") && key.has("east")) return "south_east";
+      if (key.has("south") && key.has("west")) return "south_west";
+      if (key.has("north") && key.has("west")) return "north_west";
+    }
+    return value;
+  }
+
+  return `ascending_${rotateDirection(value.replace("ascending_", ""), turns)}`;
+}
+
+function rotateProperties(properties = {}, turns = 0) {
+  const output = {};
+  for (const [key, value] of Object.entries(properties)) {
+    if (horizontalDirections.includes(key)) {
+      output[rotateDirection(key, turns)] = value;
+      continue;
+    }
+
+    if (key === "facing") {
+      output[key] = rotateDirection(value, turns);
+      continue;
+    }
+
+    if (key === "axis" && (value === "x" || value === "z")) {
+      output[key] = turns % 2 === 0 ? value : value === "x" ? "z" : "x";
+      continue;
+    }
+
+    if (key === "shape") {
+      output[key] = rotateCornerShape(value, turns);
+      continue;
+    }
+
+    if (key === "rotation") {
+      const rotation = Number(value);
+      output[key] = Number.isFinite(rotation) ? String((rotation + turns * 4) % 16) : value;
+      continue;
+    }
+
+    output[key] = value;
+  }
+  return output;
+}
+
+function rotateBlockCoordinates(x, z, size, turns) {
+  if (turns === 1) {
+    return {
+      x: size.length - 1 - z,
+      z: x
+    };
+  }
+  if (turns === 2) {
+    return {
+      x: size.width - 1 - x,
+      z: size.length - 1 - z
+    };
+  }
+  if (turns === 3) {
+    return {
+      x: z,
+      z: size.width - 1 - x
+    };
+  }
+  return { x, z };
+}
+
+function rotatedSize(size, turns) {
+  return turns % 2 === 0
+    ? { ...size }
+    : {
+        width: size.length,
+        height: size.height,
+        length: size.width
+      };
+}
+
+function rotateSchematicForView(schematic, turns) {
+  if (turns === 0) return schematic;
+  const size = schematic.size;
+  const blocks = schematic.blocks.map((block) => {
+    const localX = block.x - schematic.bounds.minX;
+    const localY = block.y - schematic.bounds.minY;
+    const localZ = block.z - schematic.bounds.minZ;
+    const rotated = rotateBlockCoordinates(localX, localZ, size, turns);
+    return {
+      ...block,
+      x: rotated.x,
+      y: localY,
+      z: rotated.z,
+      properties: rotateProperties(block.properties || {}, turns)
+    };
+  });
+  const nextSize = rotatedSize(size, turns);
+  return {
+    ...schematic,
+    blocks,
+    bounds: {
+      minX: 0,
+      minY: 0,
+      minZ: 0,
+      maxX: nextSize.width - 1,
+      maxY: nextSize.height - 1,
+      maxZ: nextSize.length - 1
+    },
+    size: nextSize
+  };
+}
+
+function blockDetailWeight(name) {
+  const value = String(name || "").toLowerCase();
+  if (
+    value.includes("redstone") ||
+    value.includes("repeater") ||
+    value.includes("comparator") ||
+    value.includes("observer") ||
+    value.includes("piston") ||
+    value.includes("hopper") ||
+    value.includes("dispenser") ||
+    value.includes("dropper") ||
+    value.includes("command_block") ||
+    value.includes("target") ||
+    value.includes("lever") ||
+    value.includes("button") ||
+    value.includes("rail")
+  ) {
+    return 12;
+  }
+  if (
+    value.includes("glass") ||
+    value.includes("slime") ||
+    value.includes("honey") ||
+    value.includes("shulker") ||
+    value.includes("sign") ||
+    value.includes("torch") ||
+    value.includes("note_block")
+  ) {
+    return 6;
+  }
+  if (
+    value.includes("cobblestone") ||
+    value.includes("stone") ||
+    value.includes("deepslate") ||
+    value.includes("blackstone") ||
+    value.includes("concrete")
+  ) {
+    return 0.55;
+  }
+  return 1.25;
+}
+
+function exposedDetailScore(schematic) {
+  const occupied = new Set(
+    schematic.blocks.map(
+      (block) =>
+        `${block.x - schematic.bounds.minX},${block.y - schematic.bounds.minY},${block.z - schematic.bounds.minZ}`
+    )
+  );
+  let score = 0;
+  for (const block of schematic.blocks) {
+    const x = block.x - schematic.bounds.minX;
+    const y = block.y - schematic.bounds.minY;
+    const z = block.z - schematic.bounds.minZ;
+    const top = occupied.has(`${x},${y + 1},${z}`) ? 0 : 0.65;
+    const east = occupied.has(`${x + 1},${y},${z}`) ? 0 : 1;
+    const south = occupied.has(`${x},${y},${z + 1}`) ? 0 : 1;
+    score += blockDetailWeight(block.name) * (top + east + south);
+  }
+  return score;
+}
+
+async function renderSingleIsometric(schematic, options) {
   const textures = new TextureManager(options.textureRoot);
   const models = new BlockModelManager(options.textureRoot);
   const { bounds, size } = schematic;
@@ -1030,5 +1218,48 @@ export async function renderIsometric(schematic, options) {
     size,
     nonAirVolume: schematic.nonAirVolume,
     boundingVolume: schematic.boundingVolume
+  };
+}
+
+export async function renderIsometric(schematic, options) {
+  const requestedView = Number(options?.viewRotation);
+  const views = Number.isInteger(requestedView)
+    ? [((requestedView % 4) + 4) % 4]
+    : [0, 1, 2, 3];
+  const candidates = [];
+
+  for (const view of views) {
+    const rotated = rotateSchematicForView(schematic, view);
+    const tempOutputPath = `${options.outputPath}.view-${view}-${Date.now()}-${Math.round(
+      Math.random() * 1e9
+    )}.tmp.png`;
+    const result = await renderSingleIsometric(rotated, {
+      ...options,
+      outputPath: tempOutputPath
+    });
+    const bytes = await fs.readFile(tempOutputPath);
+    candidates.push({
+      view,
+      bytes,
+      tempOutputPath,
+      score: exposedDetailScore(rotated),
+      result
+    });
+  }
+
+  candidates.sort((left, right) => right.score - left.score || left.view - right.view);
+  const chosen = candidates[0];
+  await fs.writeFile(options.outputPath, chosen.bytes);
+  await Promise.all(
+    candidates.map((candidate) => fs.unlink(candidate.tempOutputPath).catch(() => {}))
+  );
+
+  return {
+    ...chosen.result,
+    outputPath: options.outputPath,
+    size: schematic.size,
+    nonAirVolume: schematic.nonAirVolume,
+    boundingVolume: schematic.boundingVolume,
+    viewRotation: chosen.view
   };
 }
