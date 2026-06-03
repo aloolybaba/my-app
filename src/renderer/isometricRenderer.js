@@ -16,11 +16,9 @@ export async function renderIsometric(parsed) {
         const index = x + z * parsed.size.x + y * parsed.size.x * parsed.size.z;
         const paletteIndex = parsed.blocks[index];
         if (paletteIndex === airIndex) continue;
-        const paletteEntry = parsed.palette[paletteIndex];
-        if (!paletteEntry) continue;
-        const colorEntry = getBlockColor(paletteEntry.name);
-        if (!colorEntry) continue;
-        visible.push({ x, y, z, color: colorEntry });
+        const color = getBlockColor(parsed.palette[paletteIndex]?.name);
+        if (!color) continue;
+        visible.push({ x, y, z, color });
       }
     }
   }
