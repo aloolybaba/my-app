@@ -18,17 +18,25 @@ export async function parseLitematic(filePath) {
   const sizeY = Math.abs(Number(region.Size.value.y.value));
   const sizeZ = Math.abs(Number(region.Size.value.z.value));
 
-  const palette = region.BlockStatePalette.value.value.map(entry => ({
-    name: entry.Name.value,
-    props: entry.Properties?.value ?? {},
-  }));
+  const palette = region.BlockStatePalette.value.value.map(entry => {
+    const name = (
+      entry?.Name?.value ??
+      entry?.value?.Name?.value ??
+      'minecraft:air'
+    ).toLowerCase();
+
+    return {
+      name,
+      props: entry.Properties?.value ?? entry?.value?.Properties?.value ?? {},
+    };
+  });
 
   const blockStates = normalizeLongArray(region.BlockStates.value);
   const bitsPerBlock = Math.max(2, Math.ceil(Math.log2(Math.max(palette.length, 1))));
   const totalBlocks = sizeX * sizeY * sizeZ;
   const blocks = decodePacked(blockStates, bitsPerBlock, totalBlocks, palette.length);
 
-  const airIndex = palette.findIndex(b => b.name === 'minecraft:air');
+  const airIndex = palette.findIndex(b => b.name.split('[')[0] === 'minecraft:air');
   const filledBlocks = Array.from(blocks).filter(i => i !== airIndex).length;
 
   return {
