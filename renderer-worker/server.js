@@ -94,6 +94,25 @@ function serializeBlocks(schematic) {
   }));
 }
 
+function optionalNumber(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function cameraSettings(body) {
+  return {
+    yaw: optionalNumber(body.yaw ?? process.env.RENDER_CAMERA_YAW ?? 45),
+    pitch: optionalNumber(body.pitch ?? process.env.RENDER_CAMERA_PITCH ?? 30),
+    roll: optionalNumber(body.roll ?? process.env.RENDER_CAMERA_ROLL ?? 0),
+    scale: optionalNumber(body.scale ?? process.env.RENDER_CAMERA_SCALE),
+    x: optionalNumber(body.x ?? process.env.RENDER_CAMERA_X ?? 0),
+    y: optionalNumber(body.y ?? process.env.RENDER_CAMERA_Y ?? 0),
+    z: optionalNumber(body.z ?? process.env.RENDER_CAMERA_Z ?? 0),
+    fitPadding: optionalNumber(body.fitPadding ?? process.env.RENDER_CAMERA_FIT_PADDING ?? 0.9)
+  };
+}
+
 async function waitForJob(jobDir, startedAt) {
   const statusPath = path.join(jobDir, "status.json");
   const outputPath = path.join(jobDir, "output.png");
@@ -164,7 +183,8 @@ async function handleRender(req, res) {
       height: Number(body.height || process.env.RENDER_IMAGE_HEIGHT || 1024),
       renderEdge: body.renderEdge ?? true,
       ignoreLighting: body.ignoreLighting ?? false,
-      cleanup: body.cleanup ?? true
+      cleanup: body.cleanup ?? true,
+      camera: cameraSettings(body)
     }
   });
 
