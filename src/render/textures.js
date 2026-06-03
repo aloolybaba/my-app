@@ -51,27 +51,32 @@ const specialTextures = {
   piston: {
     top: ["piston_top.png", "piston_top_normal.png"],
     side: ["piston_side.png"],
-    front: ["piston_top.png", "piston_top_normal.png"]
+    front: ["piston_top.png", "piston_top_normal.png"],
+    back: ["piston_bottom.png", "piston_side.png"]
   },
   sticky_piston: {
     top: ["piston_top_sticky.png", "piston_top.png"],
     side: ["piston_side.png"],
-    front: ["piston_top_sticky.png", "piston_top.png"]
+    front: ["piston_top_sticky.png", "piston_top.png"],
+    back: ["piston_bottom.png", "piston_side.png"]
   },
   observer: {
     top: ["observer_top.png"],
     side: ["observer_side.png"],
-    front: ["observer_front.png"]
+    front: ["observer_front.png"],
+    back: ["observer_back.png", "observer_back_on.png"]
   },
   dispenser: {
     top: ["furnace_top.png"],
     side: ["furnace_side.png"],
-    front: ["dispenser_front.png", "dispenser_front_vertical.png"]
+    front: ["dispenser_front.png", "dispenser_front_vertical.png"],
+    back: ["furnace_side.png"]
   },
   dropper: {
     top: ["furnace_top.png"],
     side: ["furnace_side.png"],
-    front: ["dropper_front.png", "dropper_front_vertical.png"]
+    front: ["dropper_front.png", "dropper_front_vertical.png"],
+    back: ["furnace_side.png"]
   },
   hopper: {
     top: ["hopper_top.png"],
@@ -85,6 +90,48 @@ const specialTextures = {
   redstone_torch: {
     top: ["redstone_torch.png"],
     side: ["redstone_torch.png"]
+  },
+  target: {
+    top: ["target_top.png"],
+    side: ["target_side.png"],
+    front: ["target_side.png"],
+    back: ["target_side.png"]
+  },
+  command_block: {
+    top: ["command_block_side.png"],
+    side: ["command_block_side.png"],
+    front: ["command_block_front.png"],
+    back: ["command_block_back.png"]
+  },
+  chain_command_block: {
+    top: ["chain_command_block_side.png"],
+    side: ["chain_command_block_side.png"],
+    front: ["chain_command_block_front.png"],
+    back: ["chain_command_block_back.png"]
+  },
+  repeating_command_block: {
+    top: ["repeating_command_block_side.png"],
+    side: ["repeating_command_block_side.png"],
+    front: ["repeating_command_block_front.png"],
+    back: ["repeating_command_block_back.png"]
+  },
+  furnace: {
+    top: ["furnace_top.png"],
+    side: ["furnace_side.png"],
+    front: ["furnace_front.png"],
+    back: ["furnace_side.png"]
+  },
+  blast_furnace: {
+    top: ["blast_furnace_top.png"],
+    side: ["blast_furnace_side.png"],
+    front: ["blast_furnace_front.png"],
+    back: ["blast_furnace_side.png"]
+  },
+  smoker: {
+    top: ["smoker_top.png"],
+    side: ["smoker_side.png"],
+    front: ["smoker_front.png"],
+    back: ["smoker_side.png"]
   }
 };
 
@@ -121,13 +168,13 @@ function unique(values) {
 
 function tintColorFor(key) {
   const name = String(key || "").toLowerCase();
-  if (name.includes("redstone")) return "#c11212";
+  if (name.includes("redstone")) return "#b80f0f";
   if (name.includes("grass") || name.includes("leaves") || name.includes("vine")) return "#5fa64c";
   if (name.includes("water")) return "#4a74d6";
   return "#ffffff";
 }
 
-function tintCanvas(image, color) {
+function tintCanvas(image, color, fallbackKey = "") {
   if (color === "#ffffff") return image;
   const canvas = createCanvas(image.width || 16, image.height || 16);
   const ctx = canvas.getContext("2d");
@@ -135,7 +182,7 @@ function tintCanvas(image, color) {
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
   ctx.globalCompositeOperation = "source-atop";
   ctx.fillStyle = color;
-  ctx.globalAlpha = 0.9;
+  ctx.globalAlpha = String(fallbackKey).toLowerCase().includes("redstone") ? 1 : 0.86;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";
@@ -254,7 +301,7 @@ export class TextureManager {
 
     if (!tint) return image;
 
-    const tinted = tintCanvas(image, tint);
+    const tinted = tintCanvas(image, tint, fallbackKey);
     this.cache.set(cacheKey, tinted);
     return tinted;
   }
@@ -287,19 +334,22 @@ export class TextureManager {
         ? [`${key}_top.png`, `${key}.png`, `${key}_side.png`]
         : face === "front"
           ? [`${key}_front.png`, `${key}_side.png`, `${key}.png`, `${key}_top.png`]
-          : [`${key}_side.png`, `${key}.png`, `${key}_front.png`, `${key}_top.png`];
+          : face === "back"
+            ? [`${key}_back.png`, `${key}_side.png`, `${key}.png`, `${key}_front.png`]
+            : [`${key}_side.png`, `${key}.png`, `${key}_front.png`, `${key}_top.png`];
 
     return unique([...special, ...generic, "missing.png"]);
   }
 
   async getFaces(blockName) {
     const key = baseName(blockName);
-    const [top, side, front] = await Promise.all([
+    const [top, side, front, back] = await Promise.all([
       this.loadTexture(`${key}:top`, this.faceCandidates(blockName, "top"), key),
       this.loadTexture(`${key}:side`, this.faceCandidates(blockName, "side"), key),
-      this.loadTexture(`${key}:front`, this.faceCandidates(blockName, "front"), key)
+      this.loadTexture(`${key}:front`, this.faceCandidates(blockName, "front"), key),
+      this.loadTexture(`${key}:back`, this.faceCandidates(blockName, "back"), key)
     ]);
-    return { top, side, front };
+    return { top, side, front, back };
   }
 
   async get(blockName) {

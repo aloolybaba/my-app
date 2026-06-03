@@ -7,10 +7,10 @@ import { TextureManager } from "./textures.js";
 const TILE_W = 32;
 const TILE_H = 16;
 const BLOCK_H = 28;
-const OUTPUT_WIDTH = 1280;
-const OUTPUT_HEIGHT = 768;
-const MAX_RENDER_WIDTH = 900;
-const MAX_RENDER_HEIGHT = 640;
+const OUTPUT_WIDTH = 1024;
+const OUTPUT_HEIGHT = 1024;
+const MAX_RENDER_WIDTH = 940;
+const MAX_RENDER_HEIGHT = 940;
 const FACE_SHADE = {
   top: 1.06,
   left: 0.78,
@@ -92,12 +92,34 @@ function connectProp(props, name) {
 
 function topTextureFor(block, faces) {
   const facing = block.properties?.facing;
-  return facing === "up" || facing === "down" ? faces.front : faces.top;
+  if (facing === "up") return faces.front || faces.top;
+  if (facing === "down") return faces.back || faces.side || faces.top;
+  return faces.top;
+}
+
+function oppositeDirection(direction) {
+  switch (direction) {
+    case "north":
+      return "south";
+    case "south":
+      return "north";
+    case "east":
+      return "west";
+    case "west":
+      return "east";
+    case "up":
+      return "down";
+    case "down":
+      return "up";
+    default:
+      return null;
+  }
 }
 
 function sideTextureFor(block, faces, faceName) {
   const facing = block.properties?.facing;
   if (faceName === facing) return faces.front;
+  if (faceName === oppositeDirection(facing)) return faces.back || faces.side;
   return faces.side;
 }
 
@@ -376,6 +398,26 @@ function redstoneModelSideShapes(modelShapes) {
     .filter(Boolean);
 }
 
+function shouldUseModelShapes(blockName) {
+  const name = String(blockName || "");
+  return (
+    name === "redstone_wire" ||
+    name === "repeater" ||
+    name === "comparator" ||
+    name.endsWith("_rail") ||
+    name === "rail" ||
+    name === "lever" ||
+    name.endsWith("_button") ||
+    name.endsWith("_pressure_plate") ||
+    name.endsWith("_torch") ||
+    name === "torch" ||
+    name === "tripwire_hook" ||
+    name === "tripwire" ||
+    name === "lightning_rod" ||
+    name === "end_rod"
+  );
+}
+
 function renderShapesFor(block, modelShapes) {
   if (block.name === "redstone_wire") {
     if (modelShapes?.length) {
@@ -389,6 +431,7 @@ function renderShapesFor(block, modelShapes) {
     }
     return redstoneWireShapes(block);
   }
+
   return modelShapes || shapesFor(block);
 }
 

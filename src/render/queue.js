@@ -2,6 +2,7 @@ import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { config } from "../config.js";
 import { logger } from "../logger.js";
+import { remoteRendererEnabled } from "./remoteRenderer.js";
 
 export class RenderQueue {
   constructor() {
@@ -15,7 +16,10 @@ export class RenderQueue {
   }
 
   statusText() {
-    return `Render queue: ${this.queue.length} waiting, ${this.active.size} active.`;
+    const mode = remoteRendererEnabled()
+      ? "Minecraft renderer"
+      : "JavaScript fallback renderer";
+    return `Render queue: ${this.queue.length} waiting, ${this.active.size} active. Mode: ${mode}.`;
   }
 
   pump() {

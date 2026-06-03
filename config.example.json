@@ -14,5 +14,9 @@
   "maxUploadBytes": 52428800,
   "useMessageContentIntent": true,
   "textureRoot": "assets/resource-pack/assets/minecraft/textures/block",
-  "textureZipUrl": "https://github.com/InventivetalentDev/minecraft-assets/archive/refs/heads/26.1.2.zip"
+  "textureZipUrl": "https://github.com/InventivetalentDev/minecraft-assets/archive/refs/heads/26.1.2.zip",
+  "renderWorkerUrl": "",
+  "renderWorkerToken": "",
+  "renderWorkerTimeoutMs": 1800000,
+  "renderAllowJsFallback": false
 }

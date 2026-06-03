@@ -73,7 +73,26 @@ export const config = {
   textureZipUrl:
     process.env.TEXTURE_ZIP_URL ||
     fileConfig.textureZipUrl ||
-    "https://github.com/InventivetalentDev/minecraft-assets/archive/refs/heads/26.1.2.zip"
+    "https://github.com/InventivetalentDev/minecraft-assets/archive/refs/heads/26.1.2.zip",
+  renderWorkerUrl:
+    process.env.RENDER_WORKER_URL ||
+    fileConfig.renderWorkerUrl ||
+    "",
+  renderWorkerToken:
+    process.env.RENDER_WORKER_TOKEN ||
+    fileConfig.renderWorkerToken ||
+    "",
+  renderWorkerTimeoutMs: Number(
+    process.env.RENDER_WORKER_TIMEOUT_MS ||
+      fileConfig.renderWorkerTimeoutMs ||
+      30 * 60 * 1000
+  ),
+  renderAllowJsFallback:
+    String(
+      process.env.RENDER_ALLOW_JS_FALLBACK ||
+        fileConfig.renderAllowJsFallback ||
+        "true"
+    ).toLowerCase() === "true"
 };
 
 export function validateConfig() {
