@@ -175,20 +175,28 @@ public class SchematicRenderBridge implements ClientModInitializer {
                     renderer.render((target, box, frame) -> {
                         try {
                             Path outputPath = jobDir.resolve("output.png");
-                            RenderUtils.writeToNativeImage(target, image -> image.writeToFile(outputPath));
-                            writeStatus(jobDir, "done", null);
-                            renderDone.complete(null);
+                            RenderUtils.writeToNativeImage(target, image -> {
+                                try {
+                                    image.writeToFile(outputPath);
+                                    writeStatus(jobDir, "done", null);
+                                    renderDone.complete(null);
+                                } catch (Throwable error) {
+                                    writeStatus(jobDir, "error", error.getMessage());
+                                    renderDone.completeExceptionally(error);
+                                } finally {
+                                    renderer.close();
+                                    if (cleanup) {
+                                        MinecraftServer cleanupServer = Minecraft.getInstance().getSingleplayerServer();
+                                        if (cleanupServer != null) {
+                                            cleanupServer.execute(() -> runFill(cleanupServer, start.offset(-2, -2, -2), end.offset(2, 2, 2), "minecraft:air"));
+                                        }
+                                    }
+                                }
+                            });
                         } catch (Throwable error) {
                             writeStatus(jobDir, "error", error.getMessage());
                             renderDone.completeExceptionally(error);
-                        } finally {
                             renderer.close();
-                            if (cleanup) {
-                                MinecraftServer cleanupServer = Minecraft.getInstance().getSingleplayerServer();
-                                if (cleanupServer != null) {
-                                    cleanupServer.execute(() -> runFill(cleanupServer, start.offset(-2, -2, -2), end.offset(2, 2, 2), "minecraft:air"));
-                                }
-                            }
                         }
                     }, false);
                 } catch (Throwable error) {
