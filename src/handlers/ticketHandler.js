@@ -176,6 +176,12 @@ export async function closeTicket(interaction) {
 }
 
 async function getTicketCategory(guild) {
+  if (process.env.TICKET_CATEGORY_ID) {
+    const category = await guild.channels.fetch(process.env.TICKET_CATEGORY_ID).catch(() => null);
+    if (category?.type === ChannelType.GuildCategory) return category;
+    log.warn(`TICKET_CATEGORY_ID ${process.env.TICKET_CATEGORY_ID} was not found or is not a category`);
+  }
+
   if (process.env.CREATE_TICKET_CATEGORIES !== 'true') return null;
   const existing = guild.channels.cache.find(channel =>
     channel.type === ChannelType.GuildCategory && channel.name === process.env.TICKET_CATEGORY_NAME
