@@ -10,8 +10,6 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import { createTranscript } from 'discord-html-transcripts';
-import FormData from 'form-data';
-import fetch from 'node-fetch';
 import { basicEmbed, buildTicketButtons, buildWelcomeEmbed, COLORS } from '../utils/embeds.js';
 import { getStaffRoleIds } from '../utils/env.js';
 import { log } from '../utils/logger.js';
@@ -164,12 +162,30 @@ export async function askCloseConfirmation(interaction) {
 export async function closeTicket(interaction) {
   await interaction.deferReply({ ephemeral: true });
   const channel = interaction.channel;
-  const openerId = getOpenerId(interaction.channel);
-  const transcriptURL = await generateTranscriptURL(channel).catch(error => {
-    log.error('Transcript upload failed:', error);
-    return null;
-  });
-  await postTranscriptLog(channel, interaction.user, transcriptURL);
+  const closedBy = interaction.user;
+  const openerId = getOpenerId(channel);
+  const transcriptChannel = await channel.guild.channels.fetch(process.env.TRANSCRIPTS_CHANNEL_ID).catch(() => null);
+  let transcriptURL = null;
+
+  if (transcriptChannel?.isTextBased()) {
+    const transcriptEmbed = new EmbedBuilder()
+      .setTitle('Ticket Transcript')
+      .setColor(COLORS.amber)
+      .addFields(
+        { name: 'Channel', value: `#${channel.name}`, inline: true },
+        { name: 'Closed by', value: closedBy.toString(), inline: true },
+        { name: 'Closed at', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false },
+      )
+      .setFooter({ text: 'Crackers Schematics' });
+
+    try {
+      transcriptURL = await postTranscriptAndGetURL(channel, transcriptChannel, transcriptEmbed);
+    } catch (error) {
+      log.error('Failed to generate transcript:', error);
+    }
+  } else {
+    log.warn('TRANSCRIPTS_CHANNEL_ID does not point to a text channel');
+  }
 
   if (openerId) {
     const opener = await interaction.client.users.fetch(openerId).catch(() => null);
@@ -179,33 +195,33 @@ export async function closeTicket(interaction) {
         .setColor(COLORS.amber)
         .setDescription(
           `Your schematic submission ticket **#${channel.name}** was closed.\n\n` +
-          (transcriptURL ? `**[View Transcript](${transcriptURL})**` : '_Transcript unavailable._')
+          (transcriptURL ? `**[Click here to view your transcript](${transcriptURL})**` : '_Transcript unavailable._')
         )
         .addFields(
-          { name: 'Closed by', value: interaction.user.toString(), inline: true },
+          { name: 'Closed by', value: closedBy.toString(), inline: true },
           { name: 'Closed at', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
         )
         .setFooter({ text: 'Crackers Schematics' });
 
-      const row = transcriptURL
-        ? new ActionRowBuilder().addComponents(
+      const components = transcriptURL
+        ? [new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setLabel('View Transcript')
             .setStyle(ButtonStyle.Link)
             .setURL(transcriptURL),
-        )
-        : null;
+        )]
+        : [];
 
       await opener.send({
         embeds: [dmEmbed],
-        ...(row ? { components: [row] } : {}),
+        ...(components.length ? { components } : {}),
       }).catch(() => {
         log.warn(`Could not DM transcript to ${opener.tag}; DMs may be closed.`);
       });
     }
   }
 
-  await logChannel(interaction.guild, 'Ticket Closed', `${interaction.user} closed ${channel}. Transcript: ${transcriptURL ?? 'upload failed'}`);
+  await logChannel(interaction.guild, 'Ticket Closed', `${closedBy} closed ${channel}. Transcript: ${transcriptURL ?? 'unavailable'}`);
   ticketData.delete(interaction.channelId);
   await interaction.editReply('Ticket closed. This channel will be deleted in 5 seconds.');
   setTimeout(() => interaction.channel.delete('Ticket closed').catch(err => log.warn('Failed to delete ticket', err)), 5000);
@@ -257,60 +273,18 @@ async function logChannel(guild, title, description) {
   }
 }
 
-async function generateTranscriptURL(channel) {
-  const htmlBuffer = await createTranscript(channel, {
+async function postTranscriptAndGetURL(channel, transcriptChannel, transcriptEmbed) {
+  const htmlAttachment = await createTranscript(channel, {
     limit: -1,
-    returnType: 'buffer',
     filename: `${channel.name}-transcript.html`,
     saveImages: false,
     poweredBy: false,
   });
 
-  const form = new FormData();
-  form.append('file', htmlBuffer, {
-    filename: `${channel.name}-transcript.html`,
-    contentType: 'text/html',
-  });
-
-  const response = await fetch('https://0x0.st', {
-    method: 'POST',
-    body: form,
-    headers: form.getHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`0x0.st upload failed: ${response.status}`);
-  }
-
-  return (await response.text()).trim();
-}
-
-async function postTranscriptLog(channel, closedBy, transcriptURL) {
-  const transcriptChannel = await channel.guild.channels.fetch(process.env.TRANSCRIPTS_CHANNEL_ID);
-  if (!transcriptChannel?.isTextBased()) return null;
-
-  const transcriptEmbed = new EmbedBuilder()
-    .setTitle('Ticket Transcript')
-    .setColor(COLORS.amber)
-    .addFields(
-      { name: 'Channel', value: `#${channel.name}`, inline: true },
-      { name: 'Closed by', value: closedBy.toString(), inline: true },
-      { name: 'Closed at', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false },
-      { name: 'View', value: transcriptURL ?? '_(upload failed)_', inline: false },
-    )
-    .setFooter({ text: 'Crackers Schematics' });
-
-  const row = transcriptURL
-    ? new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('View Transcript')
-        .setStyle(ButtonStyle.Link)
-        .setURL(transcriptURL),
-    )
-    : null;
-
-  return transcriptChannel.send({
+  const sentMessage = await transcriptChannel.send({
     embeds: [transcriptEmbed],
-    ...(row ? { components: [row] } : {}),
+    files: [htmlAttachment],
   });
+
+  return sentMessage.attachments.first()?.url ?? null;
 }
