@@ -48,7 +48,11 @@ export async function renderWithRemoteRenderer(inputPath, outputPath) {
 
     const payload = await response.json();
     if (!payload?.imageBase64) {
-      throw new Error("Minecraft renderer response did not include imageBase64.");
+      throw new Error(
+        `Minecraft renderer response did not include imageBase64. Keys: ${Object.keys(
+          payload || {}
+        ).join(", ") || "none"}`
+      );
     }
 
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
