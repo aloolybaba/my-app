@@ -344,8 +344,7 @@ function cameraCanSee(normal) {
 }
 
 function shouldRenderModelFace(fullCube, normal) {
-  if (fullCube) return cameraCanSee(normal);
-  return normal.y > -0.75;
+  return cameraCanSee(normal);
 }
 
 function textureValue(value) {
