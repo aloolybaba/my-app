@@ -8,6 +8,7 @@ import {
   showStartInfoModal,
   toggleClaim,
 } from '../handlers/ticketHandler.js';
+import { handleRenderAngleButton } from '../handlers/schematicHandler.js';
 import { log } from '../utils/logger.js';
 
 export default {
@@ -39,6 +40,11 @@ export default {
 };
 
 async function handleButton(interaction) {
+  if (interaction.customId.startsWith('render_angle:')) {
+    await handleRenderAngleButton(interaction);
+    return;
+  }
+
   switch (interaction.customId) {
     case 'open_schematic_ticket':
       await openTicket(interaction);
