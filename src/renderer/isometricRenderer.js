@@ -354,7 +354,7 @@ function drawModelElement(ctx, cx, cy, element, halfWidth, quarterHeight, blockH
   const [fx, fy, fz] = element.from.map(value => value / 16);
   const [tx, ty, tz] = element.to.map(value => value / 16);
 
-  for (const direction of modelFaceDrawOrder(element.faces)) {
+  for (const direction of modelFaceDrawOrder(element)) {
     drawParallelogramFace(
       ctx,
       element.faces[direction],
@@ -365,15 +365,17 @@ function drawModelElement(ctx, cx, cy, element, halfWidth, quarterHeight, blockH
   }
 }
 
-function modelFaceDrawOrder(faces) {
-  const order = [];
-  if (faces.down && !faces.up) order.push('down');
-  if (faces.north && !faces.south) order.push('north');
-  if (faces.west && !faces.east) order.push('west');
-  for (const direction of ['up', 'south', 'east']) {
-    if (faces[direction]) order.push(direction);
-  }
-  return order;
+function modelFaceDrawOrder(element) {
+  const drawOrder = isFullModelCube(element)
+    ? ['south', 'east', 'up']
+    : ['down', 'north', 'west', 'south', 'east', 'up'];
+
+  return drawOrder.filter(direction => element.faces[direction]);
+}
+
+function isFullModelCube(element) {
+  return element.from[0] <= 0 && element.from[1] <= 0 && element.from[2] <= 0
+    && element.to[0] >= 16 && element.to[1] >= 16 && element.to[2] >= 16;
 }
 
 function modelFacePoints(direction, cx, cy, fx, fy, fz, tx, ty, tz, halfWidth, quarterHeight, blockHeight) {
@@ -533,7 +535,14 @@ function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint
 
 function blockShadeMultiplier(rawBlockName) {
   const raw = String(rawBlockName ?? '').toLowerCase();
-  if (raw.includes('redstone_lamp')) return raw.includes('lit=true') ? 0.72 : 0.88;
+  if (raw.includes('redstone_torch') || raw.includes('redstone_wall_torch')) {
+    return raw.includes('lit=false') ? 0.72 : 0.52;
+  }
+
+  if (raw.includes('repeater') || raw.includes('comparator')) {
+    return raw.includes('powered=true') ? 0.62 : 0.78;
+  }
+
   return 1;
 }
 
