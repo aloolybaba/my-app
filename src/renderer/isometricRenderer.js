@@ -431,7 +431,7 @@ function normalizeDegrees(degrees) {
 
 const RENDER_SKIP_BLOCKS = new Set([
   'air', 'cave_air', 'void_air',
-  'redstone_wire', 'redstone_torch', 'redstone_wall_torch',
+  'redstone_torch', 'redstone_wall_torch',
   'torch', 'wall_torch', 'soul_torch', 'soul_wall_torch',
   'lever',
   'rail', 'powered_rail', 'detector_rail', 'activator_rail',
