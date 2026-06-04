@@ -25,7 +25,7 @@ const all = name => cube(tex(name), tex(name), tex(name));
 const topSide = (top, side) => cube(tex(top), tex(side), tex(side));
 const custom = (top, left, right) => cube(tex(top), tex(left), tex(right));
 const cube = (top, left, right) => ({ top, left, right, shape: 'cube' });
-const topFlat = texture => ({ top: tex(texture), left: null, right: null, shape: 'top_flat' });
+const topFlat = (texture, options = {}) => ({ top: tex(texture), left: null, right: null, shape: 'top_flat', ...options });
 const sideFlat = (texture, side = 'both') => ({ top: null, left: tex(texture), right: tex(texture), shape: 'side_flat', side });
 const cross = texture => ({ top: null, left: tex(texture), right: tex(texture), shape: 'cross' });
 
@@ -46,7 +46,7 @@ function resolveFromBlockstate(name, states) {
 
   if (!candidates.length) return null;
 
-  const elements = candidates.flatMap(({ spec, model }) => modelToElements(model, spec));
+  const elements = candidates.flatMap(({ spec, model }) => modelToElements(model, spec, name, states));
   if (elements.length) return { shape: 'model', elements };
 
   const top = pickWorldFaceTexture(candidates, 'up');
@@ -193,7 +193,7 @@ function cleanModelName(modelRef) {
     .replace(/\.json$/, '');
 }
 
-function modelToElements(model, spec) {
+function modelToElements(model, spec, blockName, states) {
   const output = [];
 
   for (const element of model.elements ?? []) {
@@ -208,6 +208,7 @@ function modelToElements(model, spec) {
         texture,
         uv: Array.isArray(face.uv) ? face.uv : null,
         rotation: Number(face.rotation ?? 0),
+        tint: face.tintindex !== undefined ? resolveTint(blockName, states, face.tintindex) : null,
       };
     }
 
@@ -226,6 +227,20 @@ function modelToElements(model, spec) {
   }
 
   return output;
+}
+
+function resolveTint(blockName, states, tintIndex) {
+  if (blockName === 'redstone_wire' && Number(tintIndex) === 0) return redstoneDustTint(states.power);
+  return null;
+}
+
+function redstoneDustTint(power) {
+  const level = Math.max(0, Math.min(15, Number(power ?? 15)));
+  const intensity = level / 15;
+  const red = Math.round(95 + 160 * intensity);
+  const green = Math.round(8 + 24 * intensity);
+  const blue = Math.round(8 + 24 * intensity);
+  return `rgb(${red},${green},${blue})`;
 }
 
 function rotateBounds(from, to, spec, elementRotation = null) {
@@ -439,7 +454,7 @@ function resolveByName(name, states) {
   }
   if (name === 'piston_head') return custom('piston_top_normal', 'piston_side', 'piston_side');
   if (name === 'redstone_lamp') return all(states.lit === 'true' ? 'redstone_lamp_on' : 'redstone_lamp');
-  if (name === 'redstone_wire') return topFlat('redstone_dust_dot');
+  if (name === 'redstone_wire') return topFlat('redstone_dust_dot', { tint: redstoneDustTint(states.power) });
   if (name === 'repeater') return topFlat(states.powered === 'true' ? 'repeater_on' : 'repeater');
   if (name === 'comparator') return topFlat(states.powered === 'true' ? 'comparator_on' : 'comparator');
   if (name === 'redstone_torch' || name === 'redstone_wall_torch') return cross(states.lit === 'false' ? 'redstone_torch_off' : 'redstone_torch');
