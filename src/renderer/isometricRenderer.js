@@ -423,7 +423,7 @@ function drawParallelogramFace(ctx, face, rawBlockName, shade, points) {
     origin.x,
     origin.y,
   );
-  drawFace(ctx, face.image, rawBlockName, shade, face.uv, face.rotation, face.tint, FACE_BLEED, FACE_BLEED);
+  drawFace(ctx, face.image, rawBlockName, shade, face.uv, face.rotation, face.tint, N, N);
   ctx.restore();
 }
 
@@ -493,6 +493,8 @@ function drawSideFace(ctx, cx, cy, image, rawBlockName, shade, side, halfWidth, 
 }
 
 function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint = null, width = N, height = N) {
+  const effectiveShade = shade * blockShadeMultiplier(rawBlockName);
+
   if (image) {
     const source = textureSource(image, uv);
 
@@ -513,9 +515,9 @@ function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint
       faceCtx.globalCompositeOperation = 'source-over';
     }
 
-    if (shade < 1) {
+    if (effectiveShade < 1) {
       faceCtx.globalCompositeOperation = 'source-atop';
-      faceCtx.fillStyle = `rgba(0,0,0,${1 - shade})`;
+      faceCtx.fillStyle = `rgba(0,0,0,${1 - effectiveShade})`;
       faceCtx.fillRect(0, 0, N, N);
       faceCtx.globalCompositeOperation = 'source-over';
     }
@@ -524,9 +526,15 @@ function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint
   }
 
   const color = getBlockColor(rawBlockName);
-  const fallback = shade >= 1 ? color?.top : shade >= 0.75 ? color?.right : color?.left;
+  const fallback = effectiveShade >= 1 ? color?.top : effectiveShade >= 0.75 ? color?.right : color?.left;
   ctx.fillStyle = fallback ?? '#808080';
   ctx.fillRect(0, 0, width, height);
+}
+
+function blockShadeMultiplier(rawBlockName) {
+  const raw = String(rawBlockName ?? '').toLowerCase();
+  if (raw.includes('redstone_lamp')) return raw.includes('lit=true') ? 0.72 : 0.88;
+  return 1;
 }
 
 function logTextureMisses(faceCache) {
