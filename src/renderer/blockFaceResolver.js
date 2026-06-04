@@ -55,8 +55,12 @@ function withDefaultStates(name, states) {
     return { lit: 'true', facing: 'north', ...states };
   }
 
-  if (name === 'redstone_lamp') {
-    return { lit: 'false', ...states };
+  if (name === 'repeater') {
+    return { delay: '1', facing: 'north', locked: 'false', powered: 'false', ...states };
+  }
+
+  if (name === 'comparator') {
+    return { facing: 'north', mode: 'compare', powered: 'false', ...states };
   }
 
   return states;
@@ -489,7 +493,7 @@ function resolveByName(name, states) {
   });
   if (name === 'piston' || name === 'sticky_piston') {
     return directionalBlock(states.facing, {
-      front: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top',
+      front: states.extended === 'true' ? 'piston_inner' : name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top',
       back: 'piston_bottom',
       side: 'piston_side',
       top: 'piston_side',
