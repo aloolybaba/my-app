@@ -51,6 +51,10 @@ function withDefaultStates(name, states) {
     return { bottom: 'true', distance: '0', waterlogged: 'false', ...states };
   }
 
+  if (name === 'hopper') {
+    return { enabled: 'true', facing: 'down', ...states };
+  }
+
   if (name === 'redstone_torch' || name === 'redstone_wall_torch') {
     return { lit: 'true', facing: 'north', ...states };
   }
@@ -251,6 +255,7 @@ function modelToElements(model, spec, blockName, states) {
       from: rotatedBounds.from,
       to: rotatedBounds.to,
       faces,
+      shade: element.shade !== false,
     });
   }
 
@@ -334,7 +339,7 @@ function rotatePoint(point, spec) {
     [x, z] = [-z, x];
   }
 
-  return [x + 8, y + 8, z + 8].map(value => Math.max(0, Math.min(16, value)));
+  return [x + 8, y + 8, z + 8];
 }
 
 function rotateDirection(direction, spec) {
