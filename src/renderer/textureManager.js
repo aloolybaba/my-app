@@ -12,6 +12,7 @@ const TEXTURE_DIR = path.join(CACHE_ROOT, 'textures', 'block');
 const BLOCKSTATE_DIR = path.join(CACHE_ROOT, 'blockstates');
 const MODEL_DIR = path.join(CACHE_ROOT, 'models', 'block');
 const JAR_PATH = path.join(CACHE_ROOT, `client-${VERSION}.jar`);
+const CACHE_MARKER = path.join(CACHE_ROOT, 'block-assets-v4.ready');
 const TEXTURE_PREFIX = 'assets/minecraft/textures/block/';
 const BLOCKSTATE_PREFIX = 'assets/minecraft/blockstates/';
 const MODEL_PREFIX = 'assets/minecraft/models/block/';
@@ -125,14 +126,21 @@ export async function initTextures() {
   fs.mkdirSync(BLOCKSTATE_DIR, { recursive: true });
   fs.mkdirSync(MODEL_DIR, { recursive: true });
 
-  const alreadyCached = fs.existsSync(JAR_PATH) &&
+  const alreadyCached = fs.existsSync(CACHE_MARKER) &&
+    fs.existsSync(JAR_PATH) &&
     REQUIRED_ASSETS.every(file => fs.existsSync(file));
 
   if (!alreadyCached) {
-    log.info('[TextureManager] Downloading Minecraft client JAR...');
-    await downloadJar();
+    if (!fs.existsSync(JAR_PATH)) {
+      log.info('[TextureManager] Downloading Minecraft client JAR...');
+      await downloadJar();
+    } else {
+      log.info('[TextureManager] Using cached Minecraft client JAR.');
+    }
+
     log.info('[TextureManager] Extracting Minecraft block assets...');
     await extractAssets();
+    fs.writeFileSync(CACHE_MARKER, new Date().toISOString());
     log.info('[TextureManager] Extraction complete.');
   } else {
     log.info('[TextureManager] Using cached Minecraft block assets.');
