@@ -465,14 +465,6 @@ const REDSTONE_COMPONENTS = new Set([
   'comparator',
   'redstone_torch',
   'redstone_wall_torch',
-  'lever',
-  'observer',
-  'target',
-  'redstone_block',
-  'piston',
-  'sticky_piston',
-  'dispenser',
-  'dropper',
 ]);
 
 function parsePaletteBlock(rawBlockName) {
@@ -504,22 +496,27 @@ function parseStateString(stateString) {
 
 function getEffectiveRawBlockName(info, x, y, z, blocks, paletteInfo, size, airIndex) {
   if (isWallName(info.name)) {
+    if (hasStates(info.states, ['north', 'east', 'south', 'west', 'up'])) return info.raw;
     return formatRawBlockName(info.name, inferWallStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
   }
 
   if (isFenceName(info.name)) {
+    if (hasStates(info.states, ['north', 'east', 'south', 'west'])) return info.raw;
     return formatRawBlockName(info.name, inferBooleanConnectionStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex, connectsToFence));
   }
 
   if (isPaneName(info.name)) {
+    if (hasStates(info.states, ['north', 'east', 'south', 'west'])) return info.raw;
     return formatRawBlockName(info.name, inferBooleanConnectionStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex, connectsToPane));
   }
 
   if (info.name === 'scaffolding') {
+    if (hasStates(info.states, ['bottom'])) return info.raw;
     return formatRawBlockName(info.name, inferScaffoldingStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
   }
 
   if (info.name === 'redstone_wire') {
+    if (hasStates(info.states, ['north', 'east', 'south', 'west'])) return info.raw;
     return formatRawBlockName(info.name, inferRedstoneStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
   }
 
@@ -531,18 +528,23 @@ function inferWallStates(baseStates, x, y, z, blocks, paletteInfo, size, airInde
   const connected = {};
 
   for (const direction of HORIZONTAL_DIRECTIONS) {
-    const neighbor = getNeighborInfo(x, y, z, direction.dx, 0, direction.dz, blocks, paletteInfo, size, airIndex);
-    connected[direction.key] = connectsToWall(neighbor);
-    states[direction.key] = connected[direction.key]
-      ? baseStates[direction.key] === 'tall' ? 'tall' : 'low'
-      : 'none';
+    if (baseStates[direction.key] !== undefined) {
+      states[direction.key] = baseStates[direction.key];
+      connected[direction.key] = !['none', 'false'].includes(baseStates[direction.key]);
+    } else {
+      const neighbor = getNeighborInfo(x, y, z, direction.dx, 0, direction.dz, blocks, paletteInfo, size, airIndex);
+      connected[direction.key] = connectsToWall(neighbor);
+      states[direction.key] = connected[direction.key] ? 'low' : 'none';
+    }
   }
 
-  const straightNorthSouth = connected.north && connected.south && !connected.east && !connected.west;
-  const straightEastWest = connected.east && connected.west && !connected.north && !connected.south;
-  const verticalWall = isWallName(getNeighborInfo(x, y, z, 0, 1, 0, blocks, paletteInfo, size, airIndex)?.name)
-    || isWallName(getNeighborInfo(x, y, z, 0, -1, 0, blocks, paletteInfo, size, airIndex)?.name);
-  states.up = verticalWall || (!straightNorthSouth && !straightEastWest) ? 'true' : 'false';
+  if (baseStates.up === undefined) {
+    const straightNorthSouth = connected.north && connected.south && !connected.east && !connected.west;
+    const straightEastWest = connected.east && connected.west && !connected.north && !connected.south;
+    const verticalWall = isWallName(getNeighborInfo(x, y, z, 0, 1, 0, blocks, paletteInfo, size, airIndex)?.name)
+      || isWallName(getNeighborInfo(x, y, z, 0, -1, 0, blocks, paletteInfo, size, airIndex)?.name);
+    states.up = verticalWall || (!straightNorthSouth && !straightEastWest) ? 'true' : 'false';
+  }
 
   return states;
 }
@@ -550,6 +552,7 @@ function inferWallStates(baseStates, x, y, z, blocks, paletteInfo, size, airInde
 function inferBooleanConnectionStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex, predicate) {
   const states = { ...baseStates };
   for (const direction of HORIZONTAL_DIRECTIONS) {
+    if (baseStates[direction.key] !== undefined) continue;
     const neighbor = getNeighborInfo(x, y, z, direction.dx, 0, direction.dz, blocks, paletteInfo, size, airIndex);
     states[direction.key] = predicate(neighbor) ? 'true' : 'false';
   }
@@ -558,6 +561,8 @@ function inferBooleanConnectionStates(baseStates, x, y, z, blocks, paletteInfo, 
 
 function inferScaffoldingStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
   const states = { ...baseStates };
+  if (baseStates.bottom !== undefined) return states;
+
   const below = getNeighborInfo(x, y, z, 0, -1, 0, blocks, paletteInfo, size, airIndex);
   states.bottom = below?.name === 'scaffolding' ? 'false' : 'true';
   return states;
@@ -567,6 +572,7 @@ function inferRedstoneStates(baseStates, x, y, z, blocks, paletteInfo, size, air
   const states = { ...baseStates, power: baseStates.power ?? '15' };
 
   for (const direction of HORIZONTAL_DIRECTIONS) {
+    if (baseStates[direction.key] !== undefined) continue;
     const neighbor = getNeighborInfo(x, y, z, direction.dx, 0, direction.dz, blocks, paletteInfo, size, airIndex);
     states[direction.key] = connectsToRedstone(neighbor)
       ? baseStates[direction.key] === 'up' ? 'up' : 'side'
@@ -625,7 +631,6 @@ function connectsToWall(info) {
     || isFenceName(info.name)
     || isFenceGateName(info.name)
     || isPaneName(info.name)
-    || isSolidConnectionBlock(info.name)
   ));
 }
 
@@ -634,7 +639,6 @@ function connectsToFence(info) {
     isFenceName(info.name)
     || isFenceGateName(info.name)
     || isWallName(info.name)
-    || isSolidConnectionBlock(info.name)
   ));
 }
 
@@ -643,16 +647,17 @@ function connectsToPane(info) {
     isPaneName(info.name)
     || isWallName(info.name)
     || isFenceName(info.name)
-    || isSolidConnectionBlock(info.name)
   ));
 }
 
 function connectsToRedstone(info) {
   return Boolean(info && (
     REDSTONE_COMPONENTS.has(info.name)
-    || info.name.endsWith('_button')
-    || info.name.endsWith('_pressure_plate')
   ));
+}
+
+function hasStates(states, keys) {
+  return keys.every(key => states[key] !== undefined);
 }
 
 function isSolidConnectionBlock(name) {
