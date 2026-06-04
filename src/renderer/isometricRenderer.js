@@ -8,12 +8,12 @@ const N = 16;
 const BASE_HW = 16;
 const BASE_QH = 8;
 const BASE_BH = 16;
-const RENDER_SCALE = clampNumber(process.env.RENDER_SCALE, 3, 1, 4);
+const RENDER_SCALE = clampNumber(process.env.RENDER_SCALE, 4, 1, 4);
 const HW = BASE_HW * RENDER_SCALE;
 const QH = BASE_QH * RENDER_SCALE;
 const BH = BASE_BH * RENDER_SCALE;
 const PAD = 24;
-const MAX_CANVAS = clampNumber(process.env.MAX_RENDER_CANVAS, 8192, 2048, 8192);
+const MAX_CANVAS = clampNumber(process.env.MAX_RENDER_CANVAS, 10000, 2048, 12000);
 
 const SHADE_TOP = 1.0;
 const SHADE_LEFT = 0.6;
@@ -24,7 +24,7 @@ const faceCanvas = createCanvas(N, N);
 const faceCtx = faceCanvas.getContext('2d');
 faceCtx.imageSmoothingEnabled = false;
 
-export async function renderSchematic(schematic) {
+export async function renderSchematic(schematic, options = {}) {
   const { blocks, palette, size } = schematic;
   const { x: sizeX, y: sizeY, z: sizeZ } = size;
 
@@ -32,7 +32,7 @@ export async function renderSchematic(schematic) {
   const paletteInfo = palette.map(block => parsePaletteBlock(block.rawName ?? block.name));
   const faceCache = new Map();
 
-  const drawList = [];
+  const baseDrawList = [];
   for (let y = 0; y < sizeY; y += 1) {
     for (let z = 0; z < sizeZ; z += 1) {
       for (let x = 0; x < sizeX; x += 1) {
@@ -45,16 +45,22 @@ export async function renderSchematic(schematic) {
         const renderMode = getBlockRenderMode(raw);
         if (renderMode === 'skip') continue;
 
-        if (!faceCache.has(raw)) {
-          faceCache.set(raw, await loadFaces(raw));
-        }
-        drawList.push({ x, y, z, raw });
+        baseDrawList.push({ x, y, z, raw });
       }
     }
   }
 
-  if (!drawList.length) {
+  if (!baseDrawList.length) {
     throw new Error('Schematic contains no non-air blocks to render.');
+  }
+
+  const viewAngle = resolveViewAngle(baseDrawList, size, options.angle);
+  const drawList = baseDrawList.map(entry => rotateDrawEntry(entry, size, viewAngle));
+
+  for (const { raw } of drawList) {
+    if (!faceCache.has(raw)) {
+      faceCache.set(raw, await loadFaces(raw));
+    }
   }
 
   if (process.env.DEBUG_BLOCKS === 'true') {
@@ -106,6 +112,110 @@ export async function renderSchematic(schematic) {
 }
 
 export const renderIsometric = renderSchematic;
+
+const VIEW_ANGLES = [0, 90, 180, 270];
+
+function resolveViewAngle(drawList, size, requestedAngle = 'auto') {
+  if (requestedAngle !== 'auto') return normalizeViewAngle(requestedAngle);
+
+  let bestAngle = 0;
+  let bestScore = Infinity;
+  for (const angle of VIEW_ANGLES) {
+    const rotated = drawList.map(entry => rotateDrawEntry(entry, size, angle));
+    const bounds = calculateBounds(rotated, HW, QH, BH);
+    const width = bounds.maxX - bounds.minX + HW * 2 + PAD * 2;
+    const height = bounds.maxY - bounds.minY + BH + QH * 2 + PAD * 2;
+    const ratio = width / Math.max(1, height);
+    const score = Math.max(width, height) + Math.abs(ratio - 1.2) * 1000;
+    if (score < bestScore) {
+      bestScore = score;
+      bestAngle = angle;
+    }
+  }
+
+  return bestAngle;
+}
+
+function normalizeViewAngle(angle) {
+  const numeric = Number(angle);
+  if (!Number.isFinite(numeric)) return 0;
+  return VIEW_ANGLES.includes(numeric) ? numeric : 0;
+}
+
+function rotateDrawEntry(entry, size, angle) {
+  const { x, z } = rotateHorizontalPosition(entry.x, entry.z, size.x, size.z, angle);
+  return {
+    x,
+    y: entry.y,
+    z,
+    raw: rotateRawBlockName(entry.raw, angle),
+  };
+}
+
+function rotateHorizontalPosition(x, z, sizeX, sizeZ, angle) {
+  switch (normalizeViewAngle(angle)) {
+    case 90:
+      return { x: z, z: sizeX - 1 - x };
+    case 180:
+      return { x: sizeX - 1 - x, z: sizeZ - 1 - z };
+    case 270:
+      return { x: sizeZ - 1 - z, z: x };
+    case 0:
+    default:
+      return { x, z };
+  }
+}
+
+function rotateRawBlockName(rawBlockName, angle) {
+  const normalizedAngle = normalizeViewAngle(angle);
+  if (normalizedAngle === 0) return rawBlockName;
+
+  const parsed = parsePaletteBlock(rawBlockName);
+  return formatRawBlockName(parsed.name, rotateBlockStates(parsed.states, normalizedAngle));
+}
+
+function rotateBlockStates(states, angle) {
+  const output = {};
+  for (const [key, value] of Object.entries(states)) {
+    const rotatedKey = rotateHorizontalDirection(key, angle);
+    output[rotatedKey] = rotateStateValue(key, value, angle);
+  }
+  return output;
+}
+
+function rotateStateValue(key, value, angle) {
+  if (value === undefined || value === null) return value;
+  if (key === 'axis') return rotateAxis(value, angle);
+  if (key === 'rotation') return rotateRotationState(value, angle);
+  return rotateDirectionalTokens(String(value), angle);
+}
+
+function rotateAxis(value, angle) {
+  if (!['x', 'z'].includes(value) || normalizeViewAngle(angle) === 0 || normalizeViewAngle(angle) === 180) return value;
+  return value === 'x' ? 'z' : 'x';
+}
+
+function rotateRotationState(value, angle) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return value;
+  const steps = { 0: 0, 90: -4, 180: 8, 270: 4 }[normalizeViewAngle(angle)] ?? 0;
+  return String((numeric + steps + 16) % 16);
+}
+
+function rotateDirectionalTokens(value, angle) {
+  return value
+    .split('_')
+    .map(token => rotateHorizontalDirection(token, angle))
+    .join('_');
+}
+
+function rotateHorizontalDirection(direction, angle) {
+  const directions = ['north', 'east', 'south', 'west'];
+  const index = directions.indexOf(direction);
+  if (index === -1) return direction;
+  const steps = { 0: 0, 90: -1, 180: 2, 270: 1 }[normalizeViewAngle(angle)] ?? 0;
+  return directions[(index + steps + directions.length) % directions.length];
+}
 
 function calculateBounds(drawList, halfWidth, quarterHeight, blockHeight) {
   let minX = Infinity;
@@ -429,25 +539,7 @@ function normalizeDegrees(degrees) {
   return ((Number(degrees) % 360) + 360) % 360;
 }
 
-const RENDER_SKIP_BLOCKS = new Set([
-  'air', 'cave_air', 'void_air',
-  'redstone_torch', 'redstone_wall_torch',
-  'torch', 'wall_torch', 'soul_torch', 'soul_wall_torch',
-  'rail', 'powered_rail', 'detector_rail', 'activator_rail',
-  'ladder', 'vine', 'glow_lichen', 'sculk_vein',
-  'string', 'tripwire', 'tripwire_hook',
-  'flower_pot', 'dead_bush', 'grass', 'tall_grass', 'fern', 'large_fern',
-  'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
-  'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy',
-  'cornflower', 'lily_of_the_valley', 'wither_rose', 'sunflower',
-  'lilac', 'rose_bush', 'peony', 'pitcher_plant',
-  'wheat', 'carrots', 'potatoes', 'beetroots', 'melon_stem', 'pumpkin_stem',
-  'sugar_cane', 'bamboo', 'bamboo_sapling',
-  'kelp', 'kelp_plant', 'seagrass', 'tall_seagrass',
-  'nether_sprouts', 'crimson_roots', 'warped_roots',
-  'fire', 'soul_fire', 'cobweb',
-  'cake', 'decorated_pot',
-]);
+const RENDER_SKIP_BLOCKS = new Set(['air', 'cave_air', 'void_air']);
 
 const THIN_HEIGHT_BLOCKS = new Set([
   'repeater',
@@ -457,36 +549,6 @@ const THIN_HEIGHT_BLOCKS = new Set([
   'cauldron',
   'composter',
 ]);
-
-const COLOR_NAMES = [
-  'white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink',
-  'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black',
-];
-
-for (const color of COLOR_NAMES) {
-  RENDER_SKIP_BLOCKS.add(`${color}_candle`);
-  RENDER_SKIP_BLOCKS.add(`${color}_button`);
-  RENDER_SKIP_BLOCKS.add(`${color}_pressure_plate`);
-}
-
-for (const wood of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'bamboo', 'cherry', 'crimson', 'warped']) {
-  RENDER_SKIP_BLOCKS.add(`${wood}_button`);
-  RENDER_SKIP_BLOCKS.add(`${wood}_pressure_plate`);
-  RENDER_SKIP_BLOCKS.add(`${wood}_sign`);
-  RENDER_SKIP_BLOCKS.add(`${wood}_wall_sign`);
-  RENDER_SKIP_BLOCKS.add(`${wood}_hanging_sign`);
-}
-
-RENDER_SKIP_BLOCKS.add('stone_button');
-RENDER_SKIP_BLOCKS.add('polished_blackstone_button');
-RENDER_SKIP_BLOCKS.add('stone_pressure_plate');
-RENDER_SKIP_BLOCKS.add('polished_blackstone_pressure_plate');
-RENDER_SKIP_BLOCKS.add('light_weighted_pressure_plate');
-RENDER_SKIP_BLOCKS.add('heavy_weighted_pressure_plate');
-RENDER_SKIP_BLOCKS.add('candle');
-RENDER_SKIP_BLOCKS.add('sign');
-RENDER_SKIP_BLOCKS.add('wall_sign');
-RENDER_SKIP_BLOCKS.add('hanging_sign');
 
 function getBlockRenderMode(blockName) {
   const name = cleanBlockName(blockName);
@@ -608,6 +670,13 @@ function getEffectiveRawBlockName(info, x, y, z, blocks, paletteInfo, size, airI
   if (isPaneName(info.name)) {
     if (hasStates(info.states, ['north', 'east', 'south', 'west'])) return info.raw;
     return formatRawBlockName(info.name, inferBooleanConnectionStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex, connectsToPane));
+  }
+
+  if (info.name === 'fire') {
+    const below = getNeighborInfo(x, y, z, 0, -1, 0, blocks, paletteInfo, size, airIndex);
+    if (below?.name === 'soul_sand' || below?.name === 'soul_soil') {
+      return formatRawBlockName('soul_fire', info.states);
+    }
   }
 
   if (info.name === 'scaffolding') {
