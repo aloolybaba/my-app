@@ -82,33 +82,50 @@ function resolveByName(name, states) {
   if (name === 'lava') return all('lava_still');
 
   if (name === 'crafting_table') return custom('crafting_table_top', 'crafting_table_front', 'crafting_table_side');
-  if (name === 'furnace') return custom('furnace_top', 'furnace_front', 'furnace_side');
-  if (name === 'blast_furnace') return custom('blast_furnace_top', 'blast_furnace_front', 'blast_furnace_side');
-  if (name === 'smoker') return custom('smoker_top', 'smoker_front', 'smoker_side');
+  if (name === 'furnace') return directionalBlock(states.facing, {
+    front: states.lit === 'true' ? 'furnace_front_on' : 'furnace_front',
+    back: 'furnace_side',
+    side: 'furnace_side',
+    top: 'furnace_top',
+  });
+  if (name === 'blast_furnace') return directionalBlock(states.facing, {
+    front: states.lit === 'true' ? 'blast_furnace_front_on' : 'blast_furnace_front',
+    back: 'blast_furnace_side',
+    side: 'blast_furnace_side',
+    top: 'blast_furnace_top',
+  });
+  if (name === 'smoker') return directionalBlock(states.facing, {
+    front: states.lit === 'true' ? 'smoker_front_on' : 'smoker_front',
+    back: 'smoker_side',
+    side: 'smoker_side',
+    top: 'smoker_top',
+  });
   if (name === 'barrel') return topSide(states.open === 'true' ? 'barrel_top_open' : 'barrel_top', 'barrel_side');
-  if (name === 'dispenser') return custom('dispenser_front_vertical', 'dispenser_front', 'furnace_side');
-  if (name === 'dropper') return custom('dropper_front_vertical', 'dropper_front', 'furnace_side');
+  if (name === 'dispenser') return directionalBlock(states.facing, {
+    front: ['up', 'down'].includes(states.facing) ? 'dispenser_front_vertical' : 'dispenser_front',
+    back: 'furnace_side',
+    side: 'furnace_side',
+    top: 'furnace_side',
+  });
+  if (name === 'dropper') return directionalBlock(states.facing, {
+    front: ['up', 'down'].includes(states.facing) ? 'dropper_front_vertical' : 'dropper_front',
+    back: 'furnace_side',
+    side: 'furnace_side',
+    top: 'furnace_side',
+  });
   if (name === 'hopper') return topSide('hopper_inside', 'hopper_outside');
   if (name === 'observer') return directionalBlock(states.facing, {
-    up: 'observer_front',
-    down: 'observer_back',
-    north: 'observer_front',
-    south: 'observer_back',
-    east: 'observer_side',
-    west: 'observer_side',
+    front: 'observer_front',
+    back: states.powered === 'true' ? 'observer_back_on' : 'observer_back',
     side: 'observer_side',
     top: 'observer_top',
   });
   if (name === 'piston' || name === 'sticky_piston') {
     return directionalBlock(states.facing, {
-      up: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top_normal',
-      down: 'piston_bottom',
-      north: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top_normal',
-      south: 'piston_bottom',
-      east: 'piston_side',
-      west: 'piston_side',
+      front: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top_normal',
+      back: 'piston_bottom',
       side: 'piston_side',
-      top: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top_normal',
+      top: 'piston_side',
     });
   }
   if (name === 'piston_head') return custom('piston_top_normal', 'piston_side', 'piston_side');
@@ -163,7 +180,17 @@ function resolveByName(name, states) {
   if (name.endsWith('_pane')) return cross(name);
   if (name === 'iron_bars') return cross('iron_bars');
 
-  for (const suffix of ['_stairs', '_wall', '_fence', '_fence_gate', '_door', '_trapdoor']) {
+  if (name.endsWith('_stairs')) {
+    const baseFaces = resolveBaseVariant(name.replace('_stairs', ''));
+    return {
+      ...baseFaces,
+      shape: 'stairs',
+      half: states.half === 'top' ? 'top' : 'bottom',
+      facing: states.facing ?? 'north',
+    };
+  }
+
+  for (const suffix of ['_wall', '_fence', '_fence_gate', '_door', '_trapdoor']) {
     if (name.endsWith(suffix)) return resolveBaseVariant(name.replace(suffix, ''));
   }
 
@@ -192,10 +219,25 @@ function resolveBaseVariant(base) {
 }
 
 function directionalBlock(facing = 'north', textures) {
-  const top = ['up', 'down'].includes(facing) ? textures[facing] : textures.top;
-  const left = facing === 'west' ? textures.north : facing === 'east' ? textures.south : textures.side;
-  const right = facing === 'south' ? textures.north : facing === 'north' ? textures.south : textures.side;
+  const top = facing === 'up' ? textures.front : facing === 'down' ? textures.back : textures.top;
+  const left = faceForWorldSide('west', facing, textures);
+  const right = faceForWorldSide('south', facing, textures);
   return custom(top ?? textures.top, left ?? textures.side, right ?? textures.side);
+}
+
+function faceForWorldSide(worldSide, facing, textures) {
+  const opposite = {
+    north: 'south',
+    south: 'north',
+    east: 'west',
+    west: 'east',
+    up: 'down',
+    down: 'up',
+  };
+
+  if (worldSide === facing) return textures.front;
+  if (worldSide === opposite[facing]) return textures.back;
+  return textures.side;
 }
 
 function sideForFacing(facing) {
