@@ -15,6 +15,10 @@ const SHADE_TOP = 1.0;
 const SHADE_LEFT = 0.6;
 const SHADE_RIGHT = 0.8;
 
+const faceCanvas = createCanvas(N, N);
+const faceCtx = faceCanvas.getContext('2d');
+faceCtx.imageSmoothingEnabled = false;
+
 export async function renderSchematic(schematic) {
   const { blocks, palette, size } = schematic;
   const { x: sizeX, y: sizeY, z: sizeZ } = size;
@@ -31,7 +35,15 @@ export async function renderSchematic(schematic) {
       getTexture(faces.left?.replace('.png', '')),
       getTexture(faces.right?.replace('.png', '')),
     ]);
-    faceCache.set(i, { top, left, right, raw });
+    faceCache.set(i, {
+      top,
+      left,
+      right,
+      raw,
+      shape: faces.shape ?? 'cube',
+      half: faces.half ?? 'bottom',
+      side: faces.side ?? 'both',
+    });
   }
 
   const drawList = [];
@@ -64,7 +76,7 @@ export async function renderSchematic(schematic) {
   let tileBH = BH;
   let bounds = calculateBounds(drawList, tileHW, tileQH, tileBH);
   let canvasWidth = bounds.maxX - bounds.minX + tileHW * 2 + PAD * 2;
-  let canvasHeight = bounds.maxY - bounds.minY + tileBH + tileQH + PAD * 2;
+  let canvasHeight = bounds.maxY - bounds.minY + tileBH + tileQH * 2 + PAD * 2;
 
   if (canvasWidth > MAX_CANVAS || canvasHeight > MAX_CANVAS) {
     const scale = Math.min(MAX_CANVAS / canvasWidth, MAX_CANVAS / canvasHeight);
@@ -74,7 +86,7 @@ export async function renderSchematic(schematic) {
 
     bounds = calculateBounds(drawList, tileHW, tileQH, tileBH);
     canvasWidth = bounds.maxX - bounds.minX + tileHW * 2 + PAD * 2;
-    canvasHeight = bounds.maxY - bounds.minY + tileBH + tileQH + PAD * 2;
+    canvasHeight = bounds.maxY - bounds.minY + tileBH + tileQH * 2 + PAD * 2;
   }
 
   const canvas = createCanvas(Math.ceil(canvasWidth), Math.ceil(canvasHeight));
@@ -90,7 +102,7 @@ export async function renderSchematic(schematic) {
   for (const { x, y, z, paletteIndex } of drawList) {
     const cx = (x - z) * tileHW + offsetX;
     const cy = (x + z) * tileQH - y * tileBH + offsetY;
-    drawBlock(ctx, cx, cy, faceCache.get(paletteIndex), tileHW, tileQH, scaleRatio);
+    drawBlock(ctx, cx, cy, faceCache.get(paletteIndex), tileHW, tileQH, tileBH, scaleRatio);
   }
 
   return canvas.toBuffer('image/png', { compressionLevel: 9 });
@@ -116,33 +128,78 @@ function calculateBounds(drawList, halfWidth, quarterHeight, blockHeight) {
   return { minX, minY, maxX, maxY };
 }
 
-function drawBlock(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio) {
+function drawBlock(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, scaleRatio) {
+  if (faces.shape === 'top_flat') {
+    drawTopFace(ctx, cx, cy + blockHeight - 1, faces, scaleRatio);
+    return;
+  }
+
+  if (faces.shape === 'side_flat') {
+    drawVisibleSides(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, 1);
+    return;
+  }
+
+  if (faces.shape === 'cross') {
+    drawSideFace(ctx, cx, cy, faces.left, faces.raw, SHADE_LEFT, 'left', halfWidth, quarterHeight, scaleRatio, 1);
+    drawSideFace(ctx, cx, cy, faces.right, faces.raw, SHADE_RIGHT, 'right', halfWidth, quarterHeight, scaleRatio, 1);
+    return;
+  }
+
+  if (faces.shape === 'slab') {
+    const slabCy = faces.half === 'top' ? cy : cy + blockHeight / 2;
+    drawCube(ctx, cx, slabCy, faces, halfWidth, quarterHeight, scaleRatio, 0.5);
+    return;
+  }
+
+  drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, 1);
+}
+
+function drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heightRatio) {
+  drawTopFace(ctx, cx, cy, faces, scaleRatio);
+  drawSideFace(ctx, cx, cy, faces.left, faces.raw, SHADE_LEFT, 'left', halfWidth, quarterHeight, scaleRatio, heightRatio);
+  drawSideFace(ctx, cx, cy, faces.right, faces.raw, SHADE_RIGHT, 'right', halfWidth, quarterHeight, scaleRatio, heightRatio);
+}
+
+function drawTopFace(ctx, cx, cy, faces, scaleRatio) {
   ctx.save();
   ctx.setTransform(scaleRatio, scaleRatio * 0.5, -scaleRatio, scaleRatio * 0.5, cx, cy);
   drawFace(ctx, faces.top, faces.raw, SHADE_TOP);
   ctx.restore();
+}
 
-  ctx.save();
-  ctx.setTransform(scaleRatio, scaleRatio * 0.5, 0, scaleRatio, cx - halfWidth, cy + quarterHeight);
-  drawFace(ctx, faces.left, faces.raw, SHADE_LEFT);
-  ctx.restore();
+function drawVisibleSides(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heightRatio) {
+  if (faces.side === 'left' || faces.side === 'both') {
+    drawSideFace(ctx, cx, cy, faces.left, faces.raw, SHADE_LEFT, 'left', halfWidth, quarterHeight, scaleRatio, heightRatio);
+  }
 
+  if (faces.side === 'right' || faces.side === 'both') {
+    drawSideFace(ctx, cx, cy, faces.right, faces.raw, SHADE_RIGHT, 'right', halfWidth, quarterHeight, scaleRatio, heightRatio);
+  }
+}
+
+function drawSideFace(ctx, cx, cy, image, rawBlockName, shade, side, halfWidth, quarterHeight, scaleRatio, heightRatio) {
   ctx.save();
-  ctx.setTransform(scaleRatio, -scaleRatio * 0.5, 0, scaleRatio, cx, cy + quarterHeight * 2);
-  drawFace(ctx, faces.right, faces.raw, SHADE_RIGHT);
+  if (side === 'left') {
+    ctx.setTransform(scaleRatio, scaleRatio * 0.5, 0, scaleRatio * heightRatio, cx - halfWidth, cy + quarterHeight);
+  } else {
+    ctx.setTransform(scaleRatio, -scaleRatio * 0.5, 0, scaleRatio * heightRatio, cx, cy + quarterHeight * 2);
+  }
+  drawFace(ctx, image, rawBlockName, shade);
   ctx.restore();
 }
 
 function drawFace(ctx, image, rawBlockName, shade) {
   if (image) {
-    ctx.drawImage(image, 0, 0, N, N);
+    faceCtx.globalCompositeOperation = 'source-over';
+    faceCtx.clearRect(0, 0, N, N);
+    faceCtx.drawImage(image, 0, 0, Math.min(N, image.width), Math.min(N, image.height), 0, 0, N, N);
     if (shade < 1) {
-      ctx.globalCompositeOperation = 'multiply';
-      const channel = Math.round(255 * shade);
-      ctx.fillStyle = `rgb(${channel},${channel},${channel})`;
-      ctx.fillRect(0, 0, N, N);
-      ctx.globalCompositeOperation = 'source-over';
+      faceCtx.globalCompositeOperation = 'source-atop';
+      faceCtx.fillStyle = `rgba(0,0,0,${1 - shade})`;
+      faceCtx.fillRect(0, 0, N, N);
+      faceCtx.globalCompositeOperation = 'source-over';
     }
+    ctx.drawImage(faceCanvas, 0, 0, N, N);
     return;
   }
 
@@ -154,11 +211,22 @@ function drawFace(ctx, image, rawBlockName, shade) {
 
 function logTextureMisses(faceCache) {
   const misses = new Set();
-  for (const { top, left, right, raw } of faceCache.values()) {
-    if (!top || !left || !right) misses.add(raw);
+  for (const faces of faceCache.values()) {
+    if (hasMissingRequiredTexture(faces)) misses.add(faces.raw);
   }
 
   if (!misses.size) return;
   log.warn('[RENDERER] Blocks with missing texture faces:');
   for (const block of [...misses].sort()) log.warn(`  - ${block}`);
+}
+
+function hasMissingRequiredTexture(faces) {
+  if (faces.shape === 'top_flat') return !faces.top;
+  if (faces.shape === 'side_flat') {
+    if (faces.side === 'left') return !faces.left;
+    if (faces.side === 'right') return !faces.right;
+    return !faces.left || !faces.right;
+  }
+  if (faces.shape === 'cross') return !faces.left || !faces.right;
+  return !faces.top || !faces.left || !faces.right;
 }
