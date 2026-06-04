@@ -16,9 +16,13 @@ export function resolveFaces(rawBlockName) {
 }
 
 const tex = name => `${name}.png`;
-const all = name => ({ top: tex(name), left: tex(name), right: tex(name) });
-const topSide = (top, side) => ({ top: tex(top), left: tex(side), right: tex(side) });
-const custom = (top, left, right) => ({ top: tex(top), left: tex(left), right: tex(right) });
+const all = name => cube(tex(name), tex(name), tex(name));
+const topSide = (top, side) => cube(tex(top), tex(side), tex(side));
+const custom = (top, left, right) => cube(tex(top), tex(left), tex(right));
+const cube = (top, left, right) => ({ top, left, right, shape: 'cube' });
+const topFlat = texture => ({ top: tex(texture), left: null, right: null, shape: 'top_flat' });
+const sideFlat = (texture, side = 'both') => ({ top: null, left: tex(texture), right: tex(texture), shape: 'side_flat', side });
+const cross = texture => ({ top: null, left: tex(texture), right: tex(texture), shape: 'cross' });
 
 function resolveByName(name, states) {
   if (['air', 'cave_air', 'void_air'].includes(name)) return { top: null, left: null, right: null };
@@ -85,10 +89,46 @@ function resolveByName(name, states) {
   if (name === 'dispenser') return custom('dispenser_front_vertical', 'dispenser_front', 'furnace_side');
   if (name === 'dropper') return custom('dropper_front_vertical', 'dropper_front', 'furnace_side');
   if (name === 'hopper') return topSide('hopper_inside', 'hopper_outside');
-  if (name === 'observer') return topSide('observer_top', 'observer_side');
-  if (name === 'piston') return custom('piston_top_normal', 'piston_side', 'piston_side');
-  if (name === 'sticky_piston') return custom('piston_top_sticky', 'piston_side', 'piston_side');
+  if (name === 'observer') return directionalBlock(states.facing, {
+    up: 'observer_front',
+    down: 'observer_back',
+    north: 'observer_front',
+    south: 'observer_back',
+    east: 'observer_side',
+    west: 'observer_side',
+    side: 'observer_side',
+    top: 'observer_top',
+  });
+  if (name === 'piston' || name === 'sticky_piston') {
+    return directionalBlock(states.facing, {
+      up: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top_normal',
+      down: 'piston_bottom',
+      north: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top_normal',
+      south: 'piston_bottom',
+      east: 'piston_side',
+      west: 'piston_side',
+      side: 'piston_side',
+      top: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top_normal',
+    });
+  }
+  if (name === 'piston_head') return custom('piston_top_normal', 'piston_side', 'piston_side');
   if (name === 'redstone_lamp') return all(states.lit === 'true' ? 'redstone_lamp_on' : 'redstone_lamp');
+  if (name === 'redstone_wire') return topFlat('redstone_dust_dot');
+  if (name === 'repeater') return topFlat(states.powered === 'true' ? 'repeater_on' : 'repeater');
+  if (name === 'comparator') return topFlat(states.powered === 'true' ? 'comparator_on' : 'comparator');
+  if (name === 'redstone_torch' || name === 'redstone_wall_torch') return cross(states.lit === 'false' ? 'redstone_torch_off' : 'redstone_torch');
+  if (name === 'torch' || name === 'wall_torch') return cross('torch');
+  if (name === 'soul_torch' || name === 'soul_wall_torch') return cross('soul_torch');
+  if (name === 'rail') return topFlat(states.shape?.startsWith('ascending') ? 'rail_corner' : 'rail');
+  if (name === 'powered_rail') return topFlat(states.powered === 'true' ? 'powered_rail_on' : 'powered_rail');
+  if (name === 'detector_rail') return topFlat('detector_rail');
+  if (name === 'activator_rail') return topFlat(states.powered === 'true' ? 'activator_rail_on' : 'activator_rail');
+  if (name === 'ladder') return sideFlat('ladder', sideForFacing(states.facing));
+  if (name === 'lever') return topFlat('lever');
+  if (name === 'heavy_weighted_pressure_plate') return topFlat('iron_block');
+  if (name === 'light_weighted_pressure_plate') return topFlat('gold_block');
+  if (name.endsWith('_button')) return topFlat(resolveButtonTexture(name));
+  if (name.endsWith('_pressure_plate')) return topFlat(resolveBaseTexture(name.replace('_pressure_plate', '')));
   if (name === 'bookshelf') return topSide('oak_planks', 'bookshelf');
   if (name === 'jukebox') return topSide('jukebox_top', 'jukebox_side');
   if (name === 'honey_block') return topSide('honey_block_top', 'honey_block_side');
@@ -111,7 +151,19 @@ function resolveByName(name, states) {
     if (name === `${color}_glazed_terracotta`) return all(`${color}_glazed_terracotta`);
   }
 
-  for (const suffix of ['_slab', '_stairs', '_wall', '_fence', '_fence_gate', '_door', '_trapdoor', '_button', '_pressure_plate']) {
+  if (name.endsWith('_slab')) {
+    const baseFaces = resolveBaseVariant(name.replace('_slab', ''));
+    if (states.type === 'double') return baseFaces;
+    return { ...baseFaces, shape: 'slab', half: states.type === 'top' ? 'top' : 'bottom' };
+  }
+
+  if (name.endsWith('_carpet')) return topFlat(name);
+  if (name === 'snow') return topFlat('snow');
+  if (name === 'lily_pad') return topFlat('lily_pad');
+  if (name.endsWith('_pane')) return cross(name);
+  if (name === 'iron_bars') return cross('iron_bars');
+
+  for (const suffix of ['_stairs', '_wall', '_fence', '_fence_gate', '_door', '_trapdoor']) {
     if (name.endsWith(suffix)) return resolveBaseVariant(name.replace(suffix, ''));
   }
 
@@ -137,4 +189,40 @@ function resolveBaseVariant(base) {
   };
 
   return resolveByName(aliases[base] ?? base, {});
+}
+
+function directionalBlock(facing = 'north', textures) {
+  const top = ['up', 'down'].includes(facing) ? textures[facing] : textures.top;
+  const left = facing === 'west' ? textures.north : facing === 'east' ? textures.south : textures.side;
+  const right = facing === 'south' ? textures.north : facing === 'north' ? textures.south : textures.side;
+  return custom(top ?? textures.top, left ?? textures.side, right ?? textures.side);
+}
+
+function sideForFacing(facing) {
+  if (facing === 'west' || facing === 'north') return 'left';
+  if (facing === 'east' || facing === 'south') return 'right';
+  return 'both';
+}
+
+function resolveButtonTexture(name) {
+  return resolveBaseTexture(name.replace('_button', ''));
+}
+
+function resolveBaseTexture(base) {
+  const aliases = {
+    stone: 'stone',
+    polished_blackstone: 'polished_blackstone',
+    oak: 'oak_planks',
+    spruce: 'spruce_planks',
+    birch: 'birch_planks',
+    jungle: 'jungle_planks',
+    acacia: 'acacia_planks',
+    dark_oak: 'dark_oak_planks',
+    mangrove: 'mangrove_planks',
+    bamboo: 'bamboo_planks',
+    cherry: 'cherry_planks',
+    crimson: 'crimson_planks',
+    warped: 'warped_planks',
+  };
+  return aliases[base] ?? base;
 }
