@@ -12,7 +12,7 @@ const RENDER_SCALE = clampNumber(process.env.RENDER_SCALE, 4, 1, 4);
 const HW = BASE_HW * RENDER_SCALE;
 const QH = BASE_QH * RENDER_SCALE;
 const BH = BASE_BH * RENDER_SCALE;
-const PAD = 24;
+const PAD = 32 * RENDER_SCALE;
 const MAX_CANVAS = clampNumber(process.env.MAX_RENDER_CANVAS, 10000, 2048, 12000);
 
 const SHADE_TOP = 1.0;
@@ -99,7 +99,7 @@ export async function renderSchematic(schematic, options = {}) {
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const offsetX = -bounds.minX + PAD;
+  const offsetX = -bounds.minX + tileHW + PAD;
   const offsetY = -bounds.minY + PAD;
   const scaleRatio = tileHW / N;
 
@@ -312,14 +312,19 @@ async function loadFaces(raw) {
 }
 
 async function loadModelElements(elements, rawBlockName) {
-  return Promise.all(elements.map(async element => ({
-    from: element.from,
-    to: element.to,
-    top: await loadModelFace(element.top),
-    left: await loadModelFace(element.left),
-    right: await loadModelFace(element.right),
-    raw: rawBlockName,
-  })));
+  return Promise.all(elements.map(async element => {
+    const faces = {};
+    for (const [direction, face] of Object.entries(element.faces ?? {})) {
+      faces[direction] = await loadModelFace(face);
+    }
+
+    return {
+      from: element.from,
+      to: element.to,
+      faces,
+      raw: rawBlockName,
+    };
+  }));
 }
 
 async function loadModelFace(face) {
@@ -349,26 +354,53 @@ function drawModelElement(ctx, cx, cy, element, halfWidth, quarterHeight, blockH
   const [fx, fy, fz] = element.from.map(value => value / 16);
   const [tx, ty, tz] = element.to.map(value => value / 16);
 
-  const top = [
-    projectModelPoint(cx, cy, fx, ty, fz, halfWidth, quarterHeight, blockHeight),
-    projectModelPoint(cx, cy, tx, ty, fz, halfWidth, quarterHeight, blockHeight),
-    projectModelPoint(cx, cy, fx, ty, tz, halfWidth, quarterHeight, blockHeight),
-  ];
-  drawParallelogramFace(ctx, element.top, element.raw, SHADE_TOP, top);
+  for (const direction of modelFaceDrawOrder(element.faces)) {
+    drawParallelogramFace(
+      ctx,
+      element.faces[direction],
+      element.raw,
+      modelFaceShade(direction),
+      modelFacePoints(direction, cx, cy, fx, fy, fz, tx, ty, tz, halfWidth, quarterHeight, blockHeight),
+    );
+  }
+}
 
-  const south = [
-    projectModelPoint(cx, cy, fx, ty, tz, halfWidth, quarterHeight, blockHeight),
-    projectModelPoint(cx, cy, tx, ty, tz, halfWidth, quarterHeight, blockHeight),
-    projectModelPoint(cx, cy, fx, fy, tz, halfWidth, quarterHeight, blockHeight),
-  ];
-  drawParallelogramFace(ctx, element.left, element.raw, SHADE_LEFT, south);
+function modelFaceDrawOrder(faces) {
+  const order = [];
+  if (faces.down && !faces.up) order.push('down');
+  if (faces.north && !faces.south) order.push('north');
+  if (faces.west && !faces.east) order.push('west');
+  for (const direction of ['up', 'south', 'east']) {
+    if (faces[direction]) order.push(direction);
+  }
+  return order;
+}
 
-  const east = [
-    projectModelPoint(cx, cy, tx, ty, tz, halfWidth, quarterHeight, blockHeight),
-    projectModelPoint(cx, cy, tx, ty, fz, halfWidth, quarterHeight, blockHeight),
-    projectModelPoint(cx, cy, tx, fy, tz, halfWidth, quarterHeight, blockHeight),
-  ];
-  drawParallelogramFace(ctx, element.right, element.raw, SHADE_RIGHT, east);
+function modelFacePoints(direction, cx, cy, fx, fy, fz, tx, ty, tz, halfWidth, quarterHeight, blockHeight) {
+  const point = (x, y, z) => projectModelPoint(cx, cy, x, y, z, halfWidth, quarterHeight, blockHeight);
+
+  switch (direction) {
+    case 'down':
+      return [point(fx, fy, fz), point(tx, fy, fz), point(fx, fy, tz)];
+    case 'north':
+      return [point(tx, ty, fz), point(fx, ty, fz), point(tx, fy, fz)];
+    case 'west':
+      return [point(fx, ty, fz), point(fx, ty, tz), point(fx, fy, fz)];
+    case 'south':
+      return [point(fx, ty, tz), point(tx, ty, tz), point(fx, fy, tz)];
+    case 'east':
+      return [point(tx, ty, tz), point(tx, ty, fz), point(tx, fy, tz)];
+    case 'up':
+    default:
+      return [point(fx, ty, fz), point(tx, ty, fz), point(fx, ty, tz)];
+  }
+}
+
+function modelFaceShade(direction) {
+  if (direction === 'up') return SHADE_TOP;
+  if (direction === 'east' || direction === 'north') return SHADE_RIGHT;
+  if (direction === 'down') return 0.45;
+  return SHADE_LEFT;
 }
 
 function projectModelPoint(cx, cy, x, y, z, halfWidth, quarterHeight, blockHeight) {
@@ -517,7 +549,7 @@ function hasMissingRequiredTexture(faces) {
   }
   if (faces.shape === 'cross') return !faces.left || !faces.right;
   if (faces.shape === 'model') {
-    return faces.elements.some(element => [element.top, element.left, element.right].some(face => face && !face.image));
+    return faces.elements.some(element => Object.values(element.faces ?? {}).some(face => face && !face.image));
   }
   return !faces.top || !faces.left || !faces.right;
 }
