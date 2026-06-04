@@ -28,7 +28,7 @@ export default {
     }
 
     await interaction.deferReply({ ephemeral: false });
-    const result = await processLitematicAttachment(attachment, interaction.id, {});
+    const result = await processLitematicAttachment(attachment, interaction.id, {}, { title: 'Rendered Schematic' });
     const shortEmbed = result.embeds[0];
     shortEmbed.setTitle('Rendered Schematic');
 
@@ -38,8 +38,9 @@ export default {
     }
 
     await interaction.editReply({
-      embeds: [shortEmbed, basicEmbed('Render Complete', 'Attached below as `preview.png`.')],
+      embeds: [shortEmbed, basicEmbed('Render Complete', 'Use the angle buttons below to review the schematic view.')],
       files: result.files,
+      components: result.components ?? [],
     });
   },
 };
