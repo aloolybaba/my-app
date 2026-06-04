@@ -15,6 +15,9 @@ export function resolveFaces(rawBlockName) {
   );
   const states = withDefaultStates(name, parsedStates);
 
+  const directModel = resolveDirectModel(name, states);
+  if (directModel) return directModel;
+
   if (shouldUseManualShape(name)) return resolveByName(name, states);
 
   const modelFaces = resolveFromBlockstate(name, states);
@@ -283,6 +286,190 @@ function redstoneDustTint(power) {
   const green = Math.round(3 + 14 * intensity);
   const blue = Math.round(3 + 14 * intensity);
   return `rgb(${red},${green},${blue})`;
+}
+
+function resolveDirectModel(name, states) {
+  if (name === 'redstone_torch') {
+    return directModel(name, states, redstoneTorchElements(states.lit), { x: 0, y: 0 });
+  }
+
+  if (name === 'redstone_wall_torch') {
+    return directModel(name, states, redstoneWallTorchElements(states.lit), {
+      x: 0,
+      y: ({ east: 0, south: 90, west: 180, north: 270 })[states.facing] ?? 270,
+    });
+  }
+
+  if (name === 'lever') {
+    return directModel(name, states, leverElements(states.powered), leverSpec(states));
+  }
+
+  if (name === 'hopper') {
+    return directModel(name, states, hopperElements(states.facing), {
+      x: 0,
+      y: ({ down: 0, north: 0, east: 90, south: 180, west: 270 })[states.facing] ?? 0,
+    });
+  }
+
+  return null;
+}
+
+function directModel(name, states, elements, spec) {
+  return {
+    shape: 'model',
+    elements: modelToElements({ elements, textures: {} }, spec, name, states),
+  };
+}
+
+function leverSpec(states) {
+  const facing = states.facing ?? 'north';
+  if (states.face === 'ceiling') {
+    return {
+      x: 180,
+      y: ({ south: 0, west: 90, north: 180, east: 270 })[facing] ?? 180,
+    };
+  }
+
+  return {
+    x: states.face === 'wall' ? 90 : 0,
+    y: ({ north: 0, east: 90, south: 180, west: 270 })[facing] ?? 0,
+  };
+}
+
+function redstoneTorchElements(lit = 'true') {
+  const texture = lit === 'false' ? 'redstone_torch_off' : 'redstone_torch';
+  return [
+    element([7, 0, 7], [9, 10, 9], {
+      down: face(texture, [7, 13, 9, 15]),
+      up: face(texture, [7, 6, 9, 8]),
+      north: face(texture, [7, 6, 9, 16]),
+      east: face(texture, [7, 6, 9, 16]),
+      south: face(texture, [7, 6, 9, 16]),
+      west: face(texture, [7, 6, 9, 16]),
+    }, { shade: false }),
+    element([6.5, 7.5, 6.5], [9.5, 7.5, 9.5], { up: face(texture, [8, 5, 9, 6]) }, { shade: false }),
+    element([6.5, 10.5, 6.5], [9.5, 10.5, 9.5], { down: face(texture, [7, 5, 8, 6]) }, { shade: false }),
+    element([6.5, 7.5, 6.5], [9.5, 10.5, 6.5], { south: face(texture, [9, 6, 10, 7]) }, { shade: false }),
+    element([9.5, 7.5, 6.5], [9.5, 10.5, 9.5], { west: face(texture, [6, 7, 7, 8]) }, { shade: false }),
+    element([6.5, 7.5, 9.5], [9.5, 10.5, 9.5], { north: face(texture, [6, 6, 7, 7]) }, { shade: false }),
+    element([6.5, 7.5, 6.5], [6.5, 10.5, 9.5], { east: face(texture, [9, 7, 10, 8]) }, { shade: false }),
+  ];
+}
+
+function redstoneWallTorchElements(lit = 'true') {
+  const texture = lit === 'false' ? 'redstone_torch_off' : 'redstone_torch';
+  const rotation = { origin: [0, 3.5, 8], axis: 'z', angle: -22.5 };
+  return [
+    element([-1, 3.5, 7], [1, 13.5, 9], {
+      down: face(texture, [7, 13, 9, 15]),
+      up: face(texture, [7, 6, 9, 8]),
+      north: face(texture, [7, 6, 9, 16]),
+      east: face(texture, [7, 6, 9, 16]),
+      south: face(texture, [7, 6, 9, 16]),
+      west: face(texture, [7, 6, 9, 16]),
+    }, { rotation, shade: false }),
+    element([-1.5, 8, 6.5], [1.5, 11, 9.5], { up: face(texture, [6, 5, 7, 6]) }, { rotation, shade: false }),
+    element([-1.5, 14, 6.5], [1.5, 17, 9.5], { down: face(texture, [6, 5, 7, 6]) }, { rotation, shade: false }),
+    element([-1.5, 11, 3.5], [1.5, 14, 6.5], { south: face(texture, [6, 5, 7, 6]) }, { rotation, shade: false }),
+    element([1.5, 11, 6.5], [4.5, 14, 9.5], { west: face(texture, [6, 5, 7, 6]) }, { rotation, shade: false }),
+    element([-1.5, 11, 9.5], [1.5, 14, 12.5], { north: face(texture, [6, 5, 7, 6]) }, { rotation, shade: false }),
+    element([-4.5, 11, 6.5], [-1.5, 14, 9.5], { east: face(texture, [6, 5, 7, 6]) }, { rotation, shade: false }),
+  ];
+}
+
+function leverElements(powered = 'false') {
+  return [
+    element([5, -0.02, 4], [11, 2.98, 12], {
+      down: face('cobblestone', [5, 4, 11, 12]),
+      up: face('cobblestone', [5, 4, 11, 12]),
+      north: face('cobblestone', [5, 0, 11, 3]),
+      south: face('cobblestone', [5, 0, 11, 3]),
+      west: face('cobblestone', [4, 0, 12, 3]),
+      east: face('cobblestone', [4, 0, 12, 3]),
+    }),
+    element([7, 1, 7], [9, 11, 9], {
+      up: face('lever', [7, 6, 9, 8]),
+      north: face('lever', [7, 6, 9, 16]),
+      south: face('lever', [7, 6, 9, 16]),
+      west: face('lever', [7, 6, 9, 16]),
+      east: face('lever', [7, 6, 9, 16]),
+    }, {
+      rotation: { origin: [8, 1, 8], axis: 'x', angle: powered === 'true' ? -45 : 45 },
+    }),
+  ];
+}
+
+function hopperElements(facing = 'down') {
+  const spout = facing === 'down'
+    ? element([6, 0, 6], [10, 4, 10], {
+      down: face('hopper_inside'),
+      north: face('hopper_outside'),
+      south: face('hopper_outside'),
+      west: face('hopper_outside'),
+      east: face('hopper_outside'),
+    })
+    : element([6, 4, 0], [10, 8, 4], {
+      down: face('hopper_inside'),
+      up: face('hopper_outside'),
+      north: face('hopper_outside'),
+      west: face('hopper_outside'),
+      east: face('hopper_outside'),
+    });
+
+  return [
+    element([0, 10, 0], [16, 11, 16], {
+      down: face('hopper_inside'),
+      up: face('hopper_inside'),
+      north: face('hopper_outside'),
+      south: face('hopper_outside'),
+      west: face('hopper_outside'),
+      east: face('hopper_outside'),
+    }),
+    element([0, 11, 0], [2, 16, 16], {
+      up: face('hopper_top'),
+      north: face('hopper_outside'),
+      south: face('hopper_outside'),
+      west: face('hopper_outside'),
+      east: face('hopper_outside'),
+    }),
+    element([14, 11, 0], [16, 16, 16], {
+      up: face('hopper_top'),
+      north: face('hopper_outside'),
+      south: face('hopper_outside'),
+      west: face('hopper_outside'),
+      east: face('hopper_outside'),
+    }),
+    element([2, 11, 0], [14, 16, 2], {
+      up: face('hopper_top'),
+      north: face('hopper_outside'),
+      south: face('hopper_outside'),
+    }),
+    element([2, 11, 14], [14, 16, 16], {
+      up: face('hopper_top'),
+      north: face('hopper_outside'),
+      south: face('hopper_outside'),
+    }),
+    element([4, 4, 4], [12, 10, 12], {
+      down: face('hopper_inside'),
+      north: face('hopper_outside'),
+      south: face('hopper_outside'),
+      west: face('hopper_outside'),
+      east: face('hopper_outside'),
+    }),
+    spout,
+  ];
+}
+
+function element(from, to, faces, options = {}) {
+  return { from, to, faces, ...options };
+}
+
+function face(texture, uv = null, rotation = 0) {
+  return {
+    texture: tex(texture),
+    ...(uv ? { uv } : {}),
+    ...(rotation ? { rotation } : {}),
+  };
 }
 
 function rotateBounds(from, to, spec, elementRotation = null) {
