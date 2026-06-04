@@ -402,6 +402,16 @@ function resolveByName(name, states) {
   if (name === 'crimson_nylium') return topSide('crimson_nylium', 'netherrack');
   if (name === 'warped_nylium') return topSide('warped_nylium', 'netherrack');
   if (name === 'magma_block') return all('magma');
+  if (name === 'scaffolding') return topSide('scaffolding_top', 'scaffolding_side');
+  if (name === 'ice') return all('ice');
+  if (name === 'packed_ice') return all('packed_ice');
+  if (name === 'blue_ice') return all('blue_ice');
+  if (name === 'frosted_ice') return all('frosted_ice_0');
+  if (name === 'honey_block') return topSide('honey_block_top', 'honey_block_side');
+  if (name === 'slime_block') return all('slime_block');
+  if (name === 'chorus_plant') return all('chorus_plant');
+  if (name === 'chorus_flower') return all('chorus_flower');
+  if (name === 'amethyst_cluster') return all('amethyst_cluster');
   if (name === 'water') return all('water_still');
   if (name === 'lava') return all('lava_still');
 
