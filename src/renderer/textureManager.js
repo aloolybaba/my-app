@@ -19,10 +19,22 @@ const REQUIRED_ASSETS = [
   path.join(TEXTURE_DIR, 'stone.png'),
   path.join(TEXTURE_DIR, 'grass_block_top.png'),
   path.join(TEXTURE_DIR, 'rail.png'),
+  path.join(TEXTURE_DIR, 'lever.png'),
+  path.join(TEXTURE_DIR, 'scaffolding_top.png'),
+  path.join(TEXTURE_DIR, 'fire_0.png'),
+  path.join(TEXTURE_DIR, 'soul_fire_0.png'),
   path.join(BLOCKSTATE_DIR, 'stone.json'),
   path.join(BLOCKSTATE_DIR, 'observer.json'),
+  path.join(BLOCKSTATE_DIR, 'lever.json'),
+  path.join(BLOCKSTATE_DIR, 'scaffolding.json'),
+  path.join(BLOCKSTATE_DIR, 'redstone_wire.json'),
+  path.join(BLOCKSTATE_DIR, 'fire.json'),
+  path.join(BLOCKSTATE_DIR, 'soul_fire.json'),
   path.join(MODEL_DIR, 'cube_all.json'),
   path.join(MODEL_DIR, 'observer.json'),
+  path.join(MODEL_DIR, 'lever.json'),
+  path.join(MODEL_DIR, 'scaffolding_stable.json'),
+  path.join(MODEL_DIR, 'redstone_dust_dot.json'),
 ];
 
 const imageCache = new Map();
