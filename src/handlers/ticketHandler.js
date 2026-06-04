@@ -298,6 +298,7 @@ async function postTranscriptAndGetURL(channel, transcriptChannel, transcriptEmb
           .setStyle(ButtonStyle.Link)
           .setURL(transcriptURL),
       )],
+      attachments: [],
     });
   }
 
