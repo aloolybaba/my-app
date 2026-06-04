@@ -213,9 +213,9 @@ function modelToElements(model, spec, blockName, states) {
     }
 
     const visibleFaces = {
-      top: faces.up ?? null,
-      left: faces.south ?? null,
-      right: faces.east ?? null,
+      top: faces.up ?? faces.down ?? null,
+      left: faces.south ?? faces.north ?? null,
+      right: faces.east ?? faces.west ?? null,
     };
     if (!visibleFaces.top && !visibleFaces.left && !visibleFaces.right) continue;
 
@@ -479,6 +479,8 @@ function resolveByName(name, states) {
   if (name === 'redstone_torch' || name === 'redstone_wall_torch') return cross(states.lit === 'false' ? 'redstone_torch_off' : 'redstone_torch');
   if (name === 'torch' || name === 'wall_torch') return cross('torch');
   if (name === 'soul_torch' || name === 'soul_wall_torch') return cross('soul_torch');
+  if (name === 'fire') return cross('fire_0');
+  if (name === 'soul_fire') return cross('soul_fire_0');
   if (name === 'rail') return topFlat(states.shape?.startsWith('ascending') ? 'rail_corner' : 'rail');
   if (name === 'powered_rail') return topFlat(states.powered === 'true' ? 'powered_rail_on' : 'powered_rail');
   if (name === 'detector_rail') return topFlat('detector_rail');
