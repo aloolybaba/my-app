@@ -366,6 +366,10 @@ function drawModelElement(ctx, cx, cy, element, halfWidth, quarterHeight, blockH
 }
 
 function modelFaceDrawOrder(element) {
+  if (String(element.raw ?? '').includes('scaffolding')) {
+    return ['south', 'east', 'down', 'up'].filter(direction => element.faces[direction]);
+  }
+
   const drawOrder = isFullModelCube(element)
     ? ['south', 'east', 'up']
     : ['down', 'north', 'west', 'south', 'east', 'up'];
@@ -536,11 +540,7 @@ function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint
 function blockShadeMultiplier(rawBlockName) {
   const raw = String(rawBlockName ?? '').toLowerCase();
   if (raw.includes('redstone_torch') || raw.includes('redstone_wall_torch')) {
-    return raw.includes('lit=false') ? 0.72 : 0.52;
-  }
-
-  if (raw.includes('repeater') || raw.includes('comparator')) {
-    return raw.includes('powered=true') ? 0.62 : 0.78;
+    return raw.includes('lit=false') ? 0.9 : 0.82;
   }
 
   return 1;
@@ -628,6 +628,15 @@ const HORIZONTAL_DIRECTIONS = [
   { key: 'east', dx: 1, dz: 0 },
   { key: 'south', dx: 0, dz: 1 },
   { key: 'west', dx: -1, dz: 0 },
+];
+
+const PISTON_DIRECTIONS = [
+  { key: 'north', dx: 0, dy: 0, dz: -1 },
+  { key: 'east', dx: 1, dy: 0, dz: 0 },
+  { key: 'south', dx: 0, dy: 0, dz: 1 },
+  { key: 'west', dx: -1, dy: 0, dz: 0 },
+  { key: 'up', dx: 0, dy: 1, dz: 0 },
+  { key: 'down', dx: 0, dy: -1, dz: 0 },
 ];
 
 const NON_SOLID_BLOCKS = new Set([
@@ -728,6 +737,14 @@ function getEffectiveRawBlockName(info, x, y, z, blocks, paletteInfo, size, airI
     }
   }
 
+  if (isPistonBaseName(info.name)) {
+    return formatRawBlockName(info.name, inferPistonStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
+  }
+
+  if (info.name === 'piston_head') {
+    return formatRawBlockName(info.name, inferPistonHeadStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
+  }
+
   if (info.name === 'scaffolding') {
     if (hasStates(info.states, ['bottom'])) return info.raw;
     return formatRawBlockName(info.name, inferScaffoldingStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
@@ -800,6 +817,96 @@ function inferRedstoneStates(baseStates, x, y, z, blocks, paletteInfo, size, air
   return states;
 }
 
+function inferPistonStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const states = { ...baseStates };
+  const headDirection = findAdjacentPistonHeadDirection(states.facing, x, y, z, blocks, paletteInfo, size, airIndex);
+
+  if (headDirection) {
+    states.facing = headDirection.key;
+    states.extended = 'true';
+    return states;
+  }
+
+  const facing = directionByKey(states.facing) ?? directionByKey('north');
+  states.facing = facing.key;
+
+  if (states.extended === undefined) {
+    const front = getNeighborInfo(x, y, z, facing.dx, facing.dy, facing.dz, blocks, paletteInfo, size, airIndex);
+    states.extended = front?.name === 'piston_head' ? 'true' : 'false';
+  }
+
+  return states;
+}
+
+function inferPistonHeadStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const states = { ...baseStates };
+  const baseDirection = findAdjacentPistonBaseDirection(states.facing, x, y, z, blocks, paletteInfo, size, airIndex);
+
+  if (baseDirection) {
+    states.facing = oppositeDirectionKey(baseDirection.key);
+    states.type = states.type ?? (baseDirection.info.name === 'sticky_piston' ? 'sticky' : 'normal');
+  } else {
+    states.facing = states.facing ?? 'north';
+    states.type = states.type ?? 'normal';
+  }
+
+  states.short = states.short ?? 'false';
+  return states;
+}
+
+function findAdjacentPistonHeadDirection(preferredFacing, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const preferred = directionByKey(preferredFacing);
+  if (preferred) {
+    const neighbor = getNeighborInfo(x, y, z, preferred.dx, preferred.dy, preferred.dz, blocks, paletteInfo, size, airIndex);
+    if (neighbor?.name === 'piston_head') return preferred;
+  }
+
+  for (const direction of PISTON_DIRECTIONS) {
+    const neighbor = getNeighborInfo(x, y, z, direction.dx, direction.dy, direction.dz, blocks, paletteInfo, size, airIndex);
+    if (neighbor?.name === 'piston_head') return direction;
+  }
+
+  return null;
+}
+
+function findAdjacentPistonBaseDirection(preferredFacing, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const preferredBase = directionByKey(oppositeDirectionKey(preferredFacing));
+  if (preferredBase) {
+    const neighbor = getNeighborInfo(x, y, z, preferredBase.dx, preferredBase.dy, preferredBase.dz, blocks, paletteInfo, size, airIndex);
+    if (isPistonBaseName(neighbor?.name)) return { ...preferredBase, info: neighbor };
+  }
+
+  for (const direction of PISTON_DIRECTIONS) {
+    const neighbor = getNeighborInfo(x, y, z, direction.dx, direction.dy, direction.dz, blocks, paletteInfo, size, airIndex);
+    if (isPistonBaseName(neighbor?.name)) return { ...direction, info: neighbor };
+  }
+
+  return null;
+}
+
+function directionByKey(key) {
+  return PISTON_DIRECTIONS.find(direction => direction.key === key) ?? null;
+}
+
+function oppositeDirectionKey(key) {
+  switch (key) {
+    case 'north':
+      return 'south';
+    case 'east':
+      return 'west';
+    case 'south':
+      return 'north';
+    case 'west':
+      return 'east';
+    case 'up':
+      return 'down';
+    case 'down':
+      return 'up';
+    default:
+      return null;
+  }
+}
+
 function getNeighborInfo(x, y, z, dx, dy, dz, blocks, paletteInfo, size, airIndex) {
   const nx = x + dx;
   const ny = y + dy;
@@ -825,6 +932,10 @@ function formatRawBlockName(name, states) {
 
 function isAirName(name) {
   return ['air', 'cave_air', 'void_air'].includes(name);
+}
+
+function isPistonBaseName(name) {
+  return name === 'piston' || name === 'sticky_piston';
 }
 
 function isWallName(name) {
