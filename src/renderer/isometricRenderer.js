@@ -5,11 +5,15 @@ import { getBlockColor } from './blockColors.js';
 import { log } from '../utils/logger.js';
 
 const N = 16;
-const HW = 16;
-const QH = 8;
-const BH = 16;
+const BASE_HW = 16;
+const BASE_QH = 8;
+const BASE_BH = 16;
+const RENDER_SCALE = clampNumber(process.env.RENDER_SCALE, 2, 1, 4);
+const HW = BASE_HW * RENDER_SCALE;
+const QH = BASE_QH * RENDER_SCALE;
+const BH = BASE_BH * RENDER_SCALE;
 const PAD = 24;
-const MAX_CANVAS = 4096;
+const MAX_CANVAS = clampNumber(process.env.MAX_RENDER_CANVAS, 8192, 2048, 8192);
 
 const SHADE_TOP = 1.0;
 const SHADE_LEFT = 0.6;
@@ -24,38 +28,8 @@ export async function renderSchematic(schematic) {
   const { x: sizeX, y: sizeY, z: sizeZ } = size;
 
   const airIndex = palette.findIndex(block => block.name === 'minecraft:air');
+  const paletteInfo = palette.map(block => parsePaletteBlock(block.rawName ?? block.name));
   const faceCache = new Map();
-
-  for (let i = 0; i < palette.length; i += 1) {
-    if (i === airIndex) continue;
-    const raw = palette[i].rawName ?? palette[i].name;
-    const faces = resolveFaces(raw);
-
-    if (faces.shape === 'model') {
-      faceCache.set(i, {
-        raw,
-        shape: 'model',
-        elements: await loadModelElements(faces.elements, raw),
-      });
-      continue;
-    }
-
-    const [top, left, right] = await Promise.all([
-      getTexture(faces.top?.replace('.png', '')),
-      getTexture(faces.left?.replace('.png', '')),
-      getTexture(faces.right?.replace('.png', '')),
-    ]);
-    faceCache.set(i, {
-      top,
-      left,
-      right,
-      raw,
-      shape: faces.shape ?? 'cube',
-      half: faces.half ?? 'bottom',
-      side: faces.side ?? 'both',
-      facing: faces.facing ?? 'north',
-    });
-  }
 
   const drawList = [];
   for (let y = 0; y < sizeY; y += 1) {
@@ -63,8 +37,14 @@ export async function renderSchematic(schematic) {
       for (let x = 0; x < sizeX; x += 1) {
         const index = x + z * sizeX + y * (sizeX * sizeZ);
         const paletteIndex = blocks[index];
-        if (paletteIndex === airIndex || !faceCache.has(paletteIndex)) continue;
-        drawList.push({ x, y, z, paletteIndex });
+        const info = paletteInfo[paletteIndex];
+        if (paletteIndex === airIndex || !info || isAirName(info.name)) continue;
+
+        const raw = getEffectiveRawBlockName(info, x, y, z, blocks, paletteInfo, size, airIndex);
+        if (!faceCache.has(raw)) {
+          faceCache.set(raw, await loadFaces(raw));
+        }
+        drawList.push({ x, y, z, raw });
       }
     }
   }
@@ -108,12 +88,12 @@ export async function renderSchematic(schematic) {
 
   const offsetX = -bounds.minX + PAD;
   const offsetY = -bounds.minY + PAD;
-  const scaleRatio = tileHW / HW;
+  const scaleRatio = tileHW / N;
 
-  for (const { x, y, z, paletteIndex } of drawList) {
+  for (const { x, y, z, raw } of drawList) {
     const cx = (x - z) * tileHW + offsetX;
     const cy = (x + z) * tileQH - y * tileBH + offsetY;
-    drawBlock(ctx, cx, cy, faceCache.get(paletteIndex), tileHW, tileQH, tileBH, scaleRatio);
+    drawBlock(ctx, cx, cy, faceCache.get(raw), tileHW, tileQH, tileBH, scaleRatio);
   }
 
   return canvas.toBuffer('image/png', { compressionLevel: 9 });
@@ -175,6 +155,35 @@ function drawBlock(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, sc
   drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, 1);
 }
 
+async function loadFaces(raw) {
+  const faces = resolveFaces(raw);
+
+  if (faces.shape === 'model') {
+    return {
+      raw,
+      shape: 'model',
+      elements: await loadModelElements(faces.elements, raw),
+    };
+  }
+
+  const [top, left, right] = await Promise.all([
+    getTexture(faces.top?.replace('.png', '')),
+    getTexture(faces.left?.replace('.png', '')),
+    getTexture(faces.right?.replace('.png', '')),
+  ]);
+  return {
+    top,
+    left,
+    right,
+    raw,
+    tint: faces.tint ?? null,
+    shape: faces.shape ?? 'cube',
+    half: faces.half ?? 'bottom',
+    side: faces.side ?? 'both',
+    facing: faces.facing ?? 'north',
+  };
+}
+
 async function loadModelElements(elements, rawBlockName) {
   return Promise.all(elements.map(async element => ({
     from: element.from,
@@ -192,6 +201,7 @@ async function loadModelFace(face) {
     image: await getTexture(face.texture.replace('.png', '')),
     uv: face.uv,
     rotation: face.rotation ?? 0,
+    tint: face.tint ?? null,
   };
 }
 
@@ -254,7 +264,7 @@ function drawParallelogramFace(ctx, face, rawBlockName, shade, points) {
     origin.x,
     origin.y,
   );
-  drawFace(ctx, face.image, rawBlockName, shade, face.uv, face.rotation);
+  drawFace(ctx, face.image, rawBlockName, shade, face.uv, face.rotation, face.tint);
   ctx.restore();
 }
 
@@ -298,7 +308,7 @@ function drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heig
 function drawTopFace(ctx, cx, cy, faces, scaleRatio) {
   ctx.save();
   ctx.setTransform(scaleRatio, scaleRatio * 0.5, -scaleRatio, scaleRatio * 0.5, cx, cy);
-  drawFace(ctx, faces.top, faces.raw, SHADE_TOP);
+  drawFace(ctx, faces.top, faces.raw, SHADE_TOP, null, 0, faces.tint);
   ctx.restore();
 }
 
@@ -323,7 +333,7 @@ function drawSideFace(ctx, cx, cy, image, rawBlockName, shade, side, halfWidth, 
   ctx.restore();
 }
 
-function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0) {
+function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint = null) {
   if (image) {
     const source = textureSource(image, uv);
 
@@ -336,6 +346,13 @@ function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0) {
     faceCtx.scale(source.flipX ? -1 : 1, source.flipY ? -1 : 1);
     faceCtx.drawImage(image, source.x, source.y, source.width, source.height, -N / 2, -N / 2, N, N);
     faceCtx.restore();
+
+    if (tint) {
+      faceCtx.globalCompositeOperation = 'source-in';
+      faceCtx.fillStyle = tint;
+      faceCtx.fillRect(0, 0, N, N);
+      faceCtx.globalCompositeOperation = 'source-over';
+    }
 
     if (shade < 1) {
       faceCtx.globalCompositeOperation = 'source-atop';
@@ -393,4 +410,260 @@ function textureSource(image, uv) {
 
 function normalizeDegrees(degrees) {
   return ((Number(degrees) % 360) + 360) % 360;
+}
+
+const HORIZONTAL_DIRECTIONS = [
+  { key: 'north', dx: 0, dz: -1 },
+  { key: 'east', dx: 1, dz: 0 },
+  { key: 'south', dx: 0, dz: 1 },
+  { key: 'west', dx: -1, dz: 0 },
+];
+
+const NON_SOLID_BLOCKS = new Set([
+  'air',
+  'cave_air',
+  'void_air',
+  'water',
+  'lava',
+  'redstone_wire',
+  'repeater',
+  'comparator',
+  'torch',
+  'redstone_torch',
+  'soul_torch',
+  'wall_torch',
+  'redstone_wall_torch',
+  'soul_wall_torch',
+  'lever',
+  'ladder',
+  'snow',
+  'lily_pad',
+  'scaffolding',
+]);
+
+const NON_SOLID_SUFFIXES = [
+  '_button',
+  '_pressure_plate',
+  '_carpet',
+  '_rail',
+  '_sapling',
+  '_flower',
+  '_mushroom',
+  '_sign',
+  '_hanging_sign',
+  '_banner',
+  '_bed',
+  '_door',
+  '_trapdoor',
+  '_slab',
+  '_stairs',
+];
+
+const REDSTONE_COMPONENTS = new Set([
+  'redstone_wire',
+  'repeater',
+  'comparator',
+  'redstone_torch',
+  'redstone_wall_torch',
+  'lever',
+  'observer',
+  'target',
+  'redstone_block',
+  'piston',
+  'sticky_piston',
+  'dispenser',
+  'dropper',
+]);
+
+function parsePaletteBlock(rawBlockName) {
+  const raw = String(rawBlockName ?? 'minecraft:air').toLowerCase().trim();
+  const stateStart = raw.indexOf('[');
+  const fullName = (stateStart === -1 ? raw : raw.slice(0, stateStart)).trim();
+  const name = fullName.replace(/^minecraft:/, '');
+  const stateString = stateStart === -1 ? '' : raw.slice(stateStart + 1, raw.lastIndexOf(']'));
+
+  return {
+    raw,
+    name,
+    states: parseStateString(stateString),
+  };
+}
+
+function parseStateString(stateString) {
+  return Object.fromEntries(
+    stateString
+      .split(',')
+      .filter(Boolean)
+      .map(part => {
+        const [key, value] = part.split('=');
+        return [key?.trim(), value?.trim()];
+      })
+      .filter(([key, value]) => key && value !== undefined),
+  );
+}
+
+function getEffectiveRawBlockName(info, x, y, z, blocks, paletteInfo, size, airIndex) {
+  if (isWallName(info.name)) {
+    return formatRawBlockName(info.name, inferWallStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
+  }
+
+  if (isFenceName(info.name)) {
+    return formatRawBlockName(info.name, inferBooleanConnectionStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex, connectsToFence));
+  }
+
+  if (isPaneName(info.name)) {
+    return formatRawBlockName(info.name, inferBooleanConnectionStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex, connectsToPane));
+  }
+
+  if (info.name === 'scaffolding') {
+    return formatRawBlockName(info.name, inferScaffoldingStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
+  }
+
+  if (info.name === 'redstone_wire') {
+    return formatRawBlockName(info.name, inferRedstoneStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
+  }
+
+  return info.raw;
+}
+
+function inferWallStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const states = { ...baseStates };
+  const connected = {};
+
+  for (const direction of HORIZONTAL_DIRECTIONS) {
+    const neighbor = getNeighborInfo(x, y, z, direction.dx, 0, direction.dz, blocks, paletteInfo, size, airIndex);
+    connected[direction.key] = connectsToWall(neighbor);
+    states[direction.key] = connected[direction.key]
+      ? baseStates[direction.key] === 'tall' ? 'tall' : 'low'
+      : 'none';
+  }
+
+  const straightNorthSouth = connected.north && connected.south && !connected.east && !connected.west;
+  const straightEastWest = connected.east && connected.west && !connected.north && !connected.south;
+  const verticalWall = isWallName(getNeighborInfo(x, y, z, 0, 1, 0, blocks, paletteInfo, size, airIndex)?.name)
+    || isWallName(getNeighborInfo(x, y, z, 0, -1, 0, blocks, paletteInfo, size, airIndex)?.name);
+  states.up = verticalWall || (!straightNorthSouth && !straightEastWest) ? 'true' : 'false';
+
+  return states;
+}
+
+function inferBooleanConnectionStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex, predicate) {
+  const states = { ...baseStates };
+  for (const direction of HORIZONTAL_DIRECTIONS) {
+    const neighbor = getNeighborInfo(x, y, z, direction.dx, 0, direction.dz, blocks, paletteInfo, size, airIndex);
+    states[direction.key] = predicate(neighbor) ? 'true' : 'false';
+  }
+  return states;
+}
+
+function inferScaffoldingStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const states = { ...baseStates };
+  const below = getNeighborInfo(x, y, z, 0, -1, 0, blocks, paletteInfo, size, airIndex);
+  states.bottom = below?.name === 'scaffolding' ? 'false' : 'true';
+  return states;
+}
+
+function inferRedstoneStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const states = { ...baseStates, power: baseStates.power ?? '15' };
+
+  for (const direction of HORIZONTAL_DIRECTIONS) {
+    const neighbor = getNeighborInfo(x, y, z, direction.dx, 0, direction.dz, blocks, paletteInfo, size, airIndex);
+    states[direction.key] = connectsToRedstone(neighbor)
+      ? baseStates[direction.key] === 'up' ? 'up' : 'side'
+      : 'none';
+  }
+
+  return states;
+}
+
+function getNeighborInfo(x, y, z, dx, dy, dz, blocks, paletteInfo, size, airIndex) {
+  const nx = x + dx;
+  const ny = y + dy;
+  const nz = z + dz;
+  if (nx < 0 || ny < 0 || nz < 0 || nx >= size.x || ny >= size.y || nz >= size.z) return null;
+
+  const index = nx + nz * size.x + ny * (size.x * size.z);
+  const paletteIndex = blocks[index];
+  if (paletteIndex === airIndex) return null;
+
+  const info = paletteInfo[paletteIndex];
+  return info && !isAirName(info.name) ? info : null;
+}
+
+function formatRawBlockName(name, states) {
+  const entries = Object.entries(states)
+    .filter(([key, value]) => key && value !== undefined && value !== null && value !== '')
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${String(value).toLowerCase()}`);
+
+  return entries.length ? `minecraft:${name}[${entries.join(',')}]` : `minecraft:${name}`;
+}
+
+function isAirName(name) {
+  return ['air', 'cave_air', 'void_air'].includes(name);
+}
+
+function isWallName(name) {
+  return typeof name === 'string' && name.endsWith('_wall');
+}
+
+function isFenceName(name) {
+  return typeof name === 'string' && name.endsWith('_fence');
+}
+
+function isFenceGateName(name) {
+  return typeof name === 'string' && name.endsWith('_fence_gate');
+}
+
+function isPaneName(name) {
+  return name === 'iron_bars' || (typeof name === 'string' && name.endsWith('_pane'));
+}
+
+function connectsToWall(info) {
+  return Boolean(info && (
+    isWallName(info.name)
+    || isFenceName(info.name)
+    || isFenceGateName(info.name)
+    || isPaneName(info.name)
+    || isSolidConnectionBlock(info.name)
+  ));
+}
+
+function connectsToFence(info) {
+  return Boolean(info && (
+    isFenceName(info.name)
+    || isFenceGateName(info.name)
+    || isWallName(info.name)
+    || isSolidConnectionBlock(info.name)
+  ));
+}
+
+function connectsToPane(info) {
+  return Boolean(info && (
+    isPaneName(info.name)
+    || isWallName(info.name)
+    || isFenceName(info.name)
+    || isSolidConnectionBlock(info.name)
+  ));
+}
+
+function connectsToRedstone(info) {
+  return Boolean(info && (
+    REDSTONE_COMPONENTS.has(info.name)
+    || info.name.endsWith('_button')
+    || info.name.endsWith('_pressure_plate')
+  ));
+}
+
+function isSolidConnectionBlock(name) {
+  if (!name || NON_SOLID_BLOCKS.has(name)) return false;
+  if (NON_SOLID_SUFFIXES.some(suffix => name.endsWith(suffix))) return false;
+  if (name.includes('sapling') || name.includes('leaves') || name.includes('coral') || name.includes('kelp')) return false;
+  return true;
+}
+
+function clampNumber(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
 }
