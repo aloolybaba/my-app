@@ -1,3 +1,5 @@
+import { getBlockModelJson, getBlockstateJson } from './textureManager.js';
+
 export function resolveFaces(rawBlockName) {
   const full = (rawBlockName ?? '').toLowerCase();
   const name = full.replace('minecraft:', '').split('[')[0].trim();
@@ -12,7 +14,10 @@ export function resolveFaces(rawBlockName) {
       }),
   );
 
-  return resolveByName(name, states);
+  if (shouldUseManualShape(name)) return resolveByName(name, states);
+
+  const modelFaces = resolveFromBlockstate(name, states);
+  return modelFaces ?? resolveByName(name, states);
 }
 
 const tex = name => `${name}.png`;
@@ -23,6 +28,216 @@ const cube = (top, left, right) => ({ top, left, right, shape: 'cube' });
 const topFlat = texture => ({ top: tex(texture), left: null, right: null, shape: 'top_flat' });
 const sideFlat = (texture, side = 'both') => ({ top: null, left: tex(texture), right: tex(texture), shape: 'side_flat', side });
 const cross = texture => ({ top: null, left: tex(texture), right: tex(texture), shape: 'cross' });
+
+function shouldUseManualShape(name) {
+  return name.endsWith('_slab') ||
+    name.endsWith('_stairs') ||
+    name.endsWith('_pane') ||
+    name.endsWith('_carpet') ||
+    name.endsWith('_button') ||
+    name.endsWith('_pressure_plate') ||
+    name === 'snow' ||
+    name === 'lily_pad' ||
+    name === 'iron_bars' ||
+    [
+      'redstone_wire',
+      'repeater',
+      'comparator',
+      'redstone_torch',
+      'redstone_wall_torch',
+      'torch',
+      'wall_torch',
+      'soul_torch',
+      'soul_wall_torch',
+      'rail',
+      'powered_rail',
+      'detector_rail',
+      'activator_rail',
+      'ladder',
+      'lever',
+      'heavy_weighted_pressure_plate',
+      'light_weighted_pressure_plate',
+    ].includes(name);
+}
+
+function resolveFromBlockstate(name, states) {
+  const blockstate = getBlockstateJson(name);
+  if (!blockstate) return null;
+
+  const specs = selectModelSpecs(blockstate, states);
+  if (!specs.length) return null;
+
+  const candidates = specs
+    .map(spec => ({ spec, model: resolveModel(spec.model) }))
+    .filter(candidate => candidate.model);
+
+  if (!candidates.length) return null;
+
+  const top = pickWorldFaceTexture(candidates, 'up');
+  const left = pickWorldFaceTexture(candidates, 'west');
+  const right = pickWorldFaceTexture(candidates, 'south');
+  const fallback = top ?? left ?? right;
+  if (!fallback) return null;
+
+  return cube(top ?? fallback, left ?? fallback, right ?? fallback);
+}
+
+function selectModelSpecs(blockstate, states) {
+  if (blockstate.variants) {
+    const matches = Object.entries(blockstate.variants)
+      .filter(([key]) => variantKeyMatches(key, states))
+      .sort((a, b) => variantScore(b[0]) - variantScore(a[0]));
+
+    if (matches.length) return normalizeModelSpec(matches[0][1]);
+
+    if (blockstate.variants['']) return normalizeModelSpec(blockstate.variants['']);
+  }
+
+  if (blockstate.multipart) {
+    return blockstate.multipart
+      .filter(part => multipartWhenMatches(part.when, states))
+      .flatMap(part => normalizeModelSpec(part.apply));
+  }
+
+  return [];
+}
+
+function variantKeyMatches(key, states) {
+  if (!key) return true;
+  return key.split(',').every(part => {
+    const [stateKey, value] = part.split('=');
+    return states[stateKey] === value;
+  });
+}
+
+function variantScore(key) {
+  return key ? key.split(',').length : 0;
+}
+
+function multipartWhenMatches(when, states) {
+  if (!when) return true;
+  if (Array.isArray(when.OR)) return when.OR.some(condition => multipartWhenMatches(condition, states));
+  if (Array.isArray(when.AND)) return when.AND.every(condition => multipartWhenMatches(condition, states));
+
+  return Object.entries(when).every(([key, value]) => {
+    const allowed = String(value).split('|');
+    return allowed.includes(states[key]);
+  });
+}
+
+function normalizeModelSpec(spec) {
+  const selected = Array.isArray(spec) ? spec[0] : spec;
+  if (!selected?.model) return [];
+  return [{
+    model: selected.model,
+    x: Number(selected.x ?? 0),
+    y: Number(selected.y ?? 0),
+  }];
+}
+
+function resolveModel(modelRef, seen = new Set()) {
+  const modelName = cleanModelName(modelRef);
+  if (!modelName || seen.has(modelName)) return null;
+  seen.add(modelName);
+
+  const own = getBlockModelJson(modelName);
+  if (!own) return null;
+
+  const parent = own.parent ? resolveModel(own.parent, seen) : null;
+  const textures = { ...(parent?.textures ?? {}), ...(own.textures ?? {}) };
+  const elements = own.elements ?? parent?.elements ?? [];
+
+  return { name: modelName, textures, elements };
+}
+
+function pickWorldFaceTexture(candidates, worldDirection) {
+  for (const { spec, model } of candidates) {
+    const localDirection = unrotateDirectionY(worldDirection, spec.y);
+    const texture = pickModelFaceTexture(model, localDirection) ?? pickAnyModelTexture(model);
+    if (texture) return texture;
+  }
+
+  return null;
+}
+
+function pickModelFaceTexture(model, direction) {
+  for (const element of [...model.elements].reverse()) {
+    const face = element.faces?.[direction];
+    if (!face?.texture) continue;
+    const texture = resolveTextureReference(face.texture, model.textures);
+    if (texture) return texture;
+  }
+
+  return null;
+}
+
+function pickAnyModelTexture(model) {
+  for (const element of model.elements) {
+    for (const face of Object.values(element.faces ?? {})) {
+      const texture = resolveTextureReference(face.texture, model.textures);
+      if (texture) return texture;
+    }
+  }
+
+  for (const value of Object.values(model.textures ?? {})) {
+    const texture = normalizeModelTexture(value);
+    if (texture) return texture;
+  }
+
+  return null;
+}
+
+function resolveTextureReference(ref, textures) {
+  let current = ref;
+  const seen = new Set();
+
+  while (typeof current === 'string' && current.startsWith('#')) {
+    const key = current.slice(1);
+    if (seen.has(key)) return null;
+    seen.add(key);
+    current = textures[key];
+  }
+
+  return normalizeModelTexture(current);
+}
+
+function normalizeModelTexture(value) {
+  if (!value || typeof value !== 'string') return null;
+  return `${value
+    .replace(/^minecraft:/, '')
+    .replace(/^block\//, '')
+    .replace(/^textures\/block\//, '')
+    .replace(/\.png$/, '')}.png`;
+}
+
+function cleanModelName(modelRef) {
+  return modelRef
+    ?.replace(/^minecraft:/, '')
+    .replace(/^block\//, '')
+    .replace(/\.json$/, '');
+}
+
+function unrotateDirectionY(direction, degrees = 0) {
+  const steps = (((Number(degrees) / 90) % 4) + 4) % 4;
+  let result = direction;
+  for (let i = 0; i < steps; i += 1) result = rotateYCounterClockwise(result);
+  return result;
+}
+
+function rotateYCounterClockwise(direction) {
+  switch (direction) {
+    case 'north':
+      return 'east';
+    case 'east':
+      return 'south';
+    case 'south':
+      return 'west';
+    case 'west':
+      return 'north';
+    default:
+      return direction;
+  }
+}
 
 function resolveByName(name, states) {
   if (['air', 'cave_air', 'void_air'].includes(name)) return { top: null, left: null, right: null };
@@ -177,7 +392,8 @@ function resolveByName(name, states) {
   if (name.endsWith('_carpet')) return topFlat(name);
   if (name === 'snow') return topFlat('snow');
   if (name === 'lily_pad') return topFlat('lily_pad');
-  if (name.endsWith('_pane')) return cross(name);
+  if (name.endsWith('_stained_glass_pane')) return cross(name.replace('_pane', ''));
+  if (name.endsWith('_pane')) return cross(name.replace('_pane', ''));
   if (name === 'iron_bars') return cross('iron_bars');
 
   if (name.endsWith('_stairs')) {
