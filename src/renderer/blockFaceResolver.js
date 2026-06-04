@@ -207,7 +207,7 @@ function modelToElements(model, spec, blockName, states) {
       faces[worldDirection] = {
         texture,
         uv: Array.isArray(face.uv) ? face.uv : null,
-        rotation: Number(face.rotation ?? 0),
+        rotation: normalizeTextureRotation(Number(face.rotation ?? 0) + blockstateTextureRotation(worldDirection, spec)),
         tint: face.tintindex !== undefined ? resolveTint(blockName, states, face.tintindex) : null,
       };
     }
@@ -232,6 +232,15 @@ function modelToElements(model, spec, blockName, states) {
 function resolveTint(blockName, states, tintIndex) {
   if (blockName === 'redstone_wire' && Number(tintIndex) === 0) return redstoneDustTint(states.power);
   return null;
+}
+
+function blockstateTextureRotation(worldDirection, spec) {
+  if (worldDirection === 'up' || worldDirection === 'down') return Number(spec.y ?? 0);
+  return 0;
+}
+
+function normalizeTextureRotation(degrees) {
+  return ((Number(degrees) % 360) + 360) % 360;
 }
 
 function redstoneDustTint(power) {
