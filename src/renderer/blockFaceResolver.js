@@ -212,17 +212,12 @@ function modelToElements(model, spec, blockName, states) {
       };
     }
 
-    const visibleFaces = {
-      top: faces.up ?? faces.down ?? null,
-      left: faces.south ?? faces.north ?? null,
-      right: faces.east ?? faces.west ?? null,
-    };
-    if (!visibleFaces.top && !visibleFaces.left && !visibleFaces.right) continue;
+    if (!Object.keys(faces).length) continue;
 
     output.push({
       from: rotatedBounds.from,
       to: rotatedBounds.to,
-      ...visibleFaces,
+      faces,
     });
   }
 
@@ -246,9 +241,9 @@ function normalizeTextureRotation(degrees) {
 function redstoneDustTint(power) {
   const level = Math.max(0, Math.min(15, Number(power ?? 15)));
   const intensity = level / 15;
-  const red = Math.round(95 + 160 * intensity);
-  const green = Math.round(8 + 24 * intensity);
-  const blue = Math.round(8 + 24 * intensity);
+  const red = Math.round(70 + 140 * intensity);
+  const green = Math.round(4 + 18 * intensity);
+  const blue = Math.round(4 + 18 * intensity);
   return `rgb(${red},${green},${blue})`;
 }
 
