@@ -84,9 +84,9 @@ export async function renderSchematic(schematic, options = {}) {
 
   if (canvasWidth > MAX_CANVAS || canvasHeight > MAX_CANVAS) {
     const scale = Math.min(MAX_CANVAS / canvasWidth, MAX_CANVAS / canvasHeight);
-    tileHW = Math.max(1, Math.floor(HW * scale));
-    tileQH = Math.max(1, Math.floor(QH * scale));
-    tileBH = Math.max(1, Math.floor(BH * scale));
+    tileHW = Math.max(2, Math.floor(HW * scale));
+    tileQH = Math.max(1, Math.round(tileHW / 2));
+    tileBH = tileHW;
 
     bounds = calculateBounds(drawList, tileHW, tileQH, tileBH);
     canvasWidth = bounds.maxX - bounds.minX + tileHW * 2 + PAD * 2;
@@ -323,6 +323,7 @@ async function loadModelElements(elements, rawBlockName) {
       to: element.to,
       faces,
       raw: rawBlockName,
+      shade: element.shade,
     };
   }));
 }
@@ -359,7 +360,7 @@ function drawModelElement(ctx, cx, cy, element, halfWidth, quarterHeight, blockH
       ctx,
       element.faces[direction],
       element.raw,
-      modelFaceShade(direction),
+      element.shade === false ? 1 : modelFaceShade(direction),
       modelFacePoints(direction, cx, cy, fx, fy, fz, tx, ty, tz, halfWidth, quarterHeight, blockHeight),
     );
   }
@@ -538,11 +539,6 @@ function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint
 }
 
 function blockShadeMultiplier(rawBlockName) {
-  const raw = String(rawBlockName ?? '').toLowerCase();
-  if (raw.includes('redstone_torch') || raw.includes('redstone_wall_torch')) {
-    return raw.includes('lit=false') ? 0.9 : 0.82;
-  }
-
   return 1;
 }
 
@@ -745,6 +741,21 @@ function getEffectiveRawBlockName(info, x, y, z, blocks, paletteInfo, size, airI
     return formatRawBlockName(info.name, inferPistonHeadStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
   }
 
+  if (info.name === 'redstone_wall_torch') {
+    if (hasStates(info.states, ['facing', 'lit'])) return info.raw;
+    return formatRawBlockName(info.name, inferWallMountedStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
+  }
+
+  if (info.name === 'lever') {
+    if (hasStates(info.states, ['face', 'facing', 'powered'])) return info.raw;
+    return formatRawBlockName(info.name, inferLeverStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
+  }
+
+  if (info.name === 'hopper') {
+    if (hasStates(info.states, ['facing'])) return info.raw;
+    return formatRawBlockName(info.name, { enabled: 'true', facing: 'down', ...info.states });
+  }
+
   if (info.name === 'scaffolding') {
     if (hasStates(info.states, ['bottom'])) return info.raw;
     return formatRawBlockName(info.name, inferScaffoldingStates(info.states, x, y, z, blocks, paletteInfo, size, airIndex));
@@ -819,34 +830,56 @@ function inferRedstoneStates(baseStates, x, y, z, blocks, paletteInfo, size, air
 
 function inferPistonStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
   const states = { ...baseStates };
-  const headDirection = findAdjacentPistonHeadDirection(states.facing, x, y, z, blocks, paletteInfo, size, airIndex);
+  const explicitFacing = states.facing !== undefined;
+  const explicitExtended = states.extended !== undefined;
+  const facing = directionByKey(states.facing);
 
-  if (headDirection) {
-    states.facing = headDirection.key;
-    states.extended = 'true';
+  if (explicitFacing && explicitExtended && facing) return states;
+
+  if (facing) {
+    if (!explicitExtended) {
+      const front = getNeighborInfo(x, y, z, facing.dx, facing.dy, facing.dz, blocks, paletteInfo, size, airIndex);
+      states.extended = front?.name === 'piston_head' ? 'true' : 'false';
+    }
     return states;
   }
 
-  const facing = directionByKey(states.facing) ?? directionByKey('north');
-  states.facing = facing.key;
+  const headDirection = explicitFacing
+    ? null
+    : findAdjacentPistonHeadDirection(x, y, z, blocks, paletteInfo, size, airIndex);
 
-  if (states.extended === undefined) {
-    const front = getNeighborInfo(x, y, z, facing.dx, facing.dy, facing.dz, blocks, paletteInfo, size, airIndex);
-    states.extended = front?.name === 'piston_head' ? 'true' : 'false';
+  if (headDirection) {
+    states.facing = headDirection.key;
+    states.extended = states.extended ?? 'true';
+    return states;
   }
 
+  states.facing = 'north';
+  states.extended = states.extended ?? 'false';
   return states;
 }
 
 function inferPistonHeadStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
   const states = { ...baseStates };
+  const explicitFacing = states.facing !== undefined;
+  const explicitType = states.type !== undefined;
+
+  if (explicitFacing && explicitType) {
+    states.short = states.short ?? 'false';
+    return states;
+  }
+
   const baseDirection = findAdjacentPistonBaseDirection(states.facing, x, y, z, blocks, paletteInfo, size, airIndex);
 
-  if (baseDirection) {
+  if (baseDirection && !explicitFacing) {
     states.facing = oppositeDirectionKey(baseDirection.key);
-    states.type = states.type ?? (baseDirection.info.name === 'sticky_piston' ? 'sticky' : 'normal');
   } else {
     states.facing = states.facing ?? 'north';
+  }
+
+  if (baseDirection && !explicitType) {
+    states.type = baseDirection.info.name === 'sticky_piston' ? 'sticky' : 'normal';
+  } else {
     states.type = states.type ?? 'normal';
   }
 
@@ -854,16 +887,47 @@ function inferPistonHeadStates(baseStates, x, y, z, blocks, paletteInfo, size, a
   return states;
 }
 
-function findAdjacentPistonHeadDirection(preferredFacing, x, y, z, blocks, paletteInfo, size, airIndex) {
-  const preferred = directionByKey(preferredFacing);
-  if (preferred) {
-    const neighbor = getNeighborInfo(x, y, z, preferred.dx, preferred.dy, preferred.dz, blocks, paletteInfo, size, airIndex);
-    if (neighbor?.name === 'piston_head') return preferred;
-  }
-
+function findAdjacentPistonHeadDirection(x, y, z, blocks, paletteInfo, size, airIndex) {
   for (const direction of PISTON_DIRECTIONS) {
     const neighbor = getNeighborInfo(x, y, z, direction.dx, direction.dy, direction.dz, blocks, paletteInfo, size, airIndex);
     if (neighbor?.name === 'piston_head') return direction;
+  }
+
+  return null;
+}
+
+function inferWallMountedStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const states = { lit: 'true', ...baseStates };
+  states.facing = states.facing ?? inferFacingAwayFromSupport(x, y, z, blocks, paletteInfo, size, airIndex) ?? 'north';
+  return states;
+}
+
+function inferLeverStates(baseStates, x, y, z, blocks, paletteInfo, size, airIndex) {
+  const states = { powered: 'false', ...baseStates };
+
+  if (states.face === undefined) {
+    if (isSolidConnectionBlock(getNeighborInfo(x, y, z, 0, -1, 0, blocks, paletteInfo, size, airIndex)?.name)) {
+      states.face = 'floor';
+    } else if (isSolidConnectionBlock(getNeighborInfo(x, y, z, 0, 1, 0, blocks, paletteInfo, size, airIndex)?.name)) {
+      states.face = 'ceiling';
+    } else {
+      states.face = 'wall';
+    }
+  }
+
+  if (states.facing === undefined) {
+    states.facing = states.face === 'wall'
+      ? inferFacingAwayFromSupport(x, y, z, blocks, paletteInfo, size, airIndex) ?? 'north'
+      : 'north';
+  }
+
+  return states;
+}
+
+function inferFacingAwayFromSupport(x, y, z, blocks, paletteInfo, size, airIndex) {
+  for (const direction of HORIZONTAL_DIRECTIONS) {
+    const support = getNeighborInfo(x, y, z, -direction.dx, 0, -direction.dz, blocks, paletteInfo, size, airIndex);
+    if (isSolidConnectionBlock(support?.name)) return direction.key;
   }
 
   return null;
@@ -874,6 +938,7 @@ function findAdjacentPistonBaseDirection(preferredFacing, x, y, z, blocks, palet
   if (preferredBase) {
     const neighbor = getNeighborInfo(x, y, z, preferredBase.dx, preferredBase.dy, preferredBase.dz, blocks, paletteInfo, size, airIndex);
     if (isPistonBaseName(neighbor?.name)) return { ...preferredBase, info: neighbor };
+    return null;
   }
 
   for (const direction of PISTON_DIRECTIONS) {
