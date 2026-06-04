@@ -299,7 +299,7 @@ function rotatePoint(point, spec) {
   let [x, y, z] = point.map(value => value - 8);
 
   for (let i = 0; i < rotationSteps(spec.x); i += 1) {
-    [y, z] = [-z, y];
+    [y, z] = [z, -y];
   }
 
   for (let i = 0; i < rotationSteps(spec.y); i += 1) {
@@ -345,12 +345,12 @@ function rotateYClockwise(direction) {
 function rotateXClockwise(direction) {
   switch (direction) {
     case 'up':
-      return 'south';
-    case 'south':
-      return 'down';
-    case 'down':
       return 'north';
     case 'north':
+      return 'down';
+    case 'down':
+      return 'south';
+    case 'south':
       return 'up';
     default:
       return direction;
