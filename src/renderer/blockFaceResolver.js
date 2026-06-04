@@ -4,7 +4,7 @@ export function resolveFaces(rawBlockName) {
   const full = (rawBlockName ?? '').toLowerCase();
   const name = full.replace('minecraft:', '').split('[')[0].trim();
   const stateString = full.includes('[') ? full.slice(full.indexOf('[') + 1, full.lastIndexOf(']')) : '';
-  const states = Object.fromEntries(
+  const parsedStates = Object.fromEntries(
     stateString
       .split(',')
       .filter(Boolean)
@@ -13,6 +13,7 @@ export function resolveFaces(rawBlockName) {
         return [key?.trim(), value?.trim()];
       }),
   );
+  const states = withDefaultStates(name, parsedStates);
 
   if (shouldUseManualShape(name)) return resolveByName(name, states);
 
@@ -31,6 +32,34 @@ const cross = texture => ({ top: null, left: tex(texture), right: tex(texture), 
 
 function shouldUseManualShape(name) {
   return false;
+}
+
+function withDefaultStates(name, states) {
+  if (name === 'piston' || name === 'sticky_piston') {
+    return { extended: 'false', facing: 'north', ...states };
+  }
+
+  if (name === 'piston_head') {
+    return { facing: 'north', short: 'false', type: 'normal', ...states };
+  }
+
+  if (name === 'lever') {
+    return { face: 'floor', facing: 'north', powered: 'false', ...states };
+  }
+
+  if (name === 'scaffolding') {
+    return { bottom: 'true', distance: '0', waterlogged: 'false', ...states };
+  }
+
+  if (name === 'redstone_torch' || name === 'redstone_wall_torch') {
+    return { lit: 'true', facing: 'north', ...states };
+  }
+
+  if (name === 'redstone_lamp') {
+    return { lit: 'false', ...states };
+  }
+
+  return states;
 }
 
 function resolveFromBlockstate(name, states) {
@@ -241,9 +270,9 @@ function normalizeTextureRotation(degrees) {
 function redstoneDustTint(power) {
   const level = Math.max(0, Math.min(15, Number(power ?? 15)));
   const intensity = level / 15;
-  const red = Math.round(70 + 140 * intensity);
-  const green = Math.round(4 + 18 * intensity);
-  const blue = Math.round(4 + 18 * intensity);
+  const red = Math.round(55 + 130 * intensity);
+  const green = Math.round(3 + 14 * intensity);
+  const blue = Math.round(3 + 14 * intensity);
   return `rgb(${red},${green},${blue})`;
 }
 
@@ -460,13 +489,13 @@ function resolveByName(name, states) {
   });
   if (name === 'piston' || name === 'sticky_piston') {
     return directionalBlock(states.facing, {
-      front: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top_normal',
+      front: name === 'sticky_piston' ? 'piston_top_sticky' : 'piston_top',
       back: 'piston_bottom',
       side: 'piston_side',
       top: 'piston_side',
     });
   }
-  if (name === 'piston_head') return custom('piston_top_normal', 'piston_side', 'piston_side');
+  if (name === 'piston_head') return custom(states.type === 'sticky' ? 'piston_top_sticky' : 'piston_top', 'piston_side', 'piston_side');
   if (name === 'redstone_lamp') return all(states.lit === 'true' ? 'redstone_lamp_on' : 'redstone_lamp');
   if (name === 'redstone_wire') return topFlat('redstone_dust_dot', { tint: redstoneDustTint(states.power) });
   if (name === 'repeater') return topFlat(states.powered === 'true' ? 'repeater_on' : 'repeater');
