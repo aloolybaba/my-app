@@ -43,6 +43,7 @@ export async function renderSchematic(schematic) {
       shape: faces.shape ?? 'cube',
       half: faces.half ?? 'bottom',
       side: faces.side ?? 'both',
+      facing: faces.facing ?? 'north',
     });
   }
 
@@ -151,7 +152,35 @@ function drawBlock(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, sc
     return;
   }
 
+  if (faces.shape === 'stairs') {
+    drawStairs(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, scaleRatio);
+    return;
+  }
+
   drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, 1);
+}
+
+function drawStairs(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, scaleRatio) {
+  const baseCy = faces.half === 'top' ? cy : cy + blockHeight / 2;
+  drawCube(ctx, cx, baseCy, faces, halfWidth, quarterHeight, scaleRatio, 0.5);
+
+  const lipOffset = stairLipOffset(faces.facing, halfWidth, quarterHeight);
+  const lipCy = faces.half === 'top' ? cy + blockHeight / 2 : cy;
+  drawTopFace(ctx, cx + lipOffset.x, lipCy + lipOffset.y, faces, scaleRatio);
+}
+
+function stairLipOffset(facing, halfWidth, quarterHeight) {
+  switch (facing) {
+    case 'west':
+      return { x: -halfWidth / 2, y: quarterHeight / 2 };
+    case 'east':
+      return { x: halfWidth / 2, y: -quarterHeight / 2 };
+    case 'south':
+      return { x: halfWidth / 2, y: quarterHeight / 2 };
+    case 'north':
+    default:
+      return { x: -halfWidth / 2, y: -quarterHeight / 2 };
+  }
 }
 
 function drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heightRatio) {
