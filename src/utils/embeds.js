@@ -28,8 +28,7 @@ export function buildWelcomeEmbed(user) {
   return new EmbedBuilder()
     .setTitle('Schematic Submission')
     .setDescription(`Welcome ${user}.\n\nClick **Start Information** when you are ready to fill out schematic details.\nUse **Add Extra Details** after that for positives, negatives, and instructions.\nUpload your \`.litematic\` file in this channel.\nThe bot will parse the file, render an isometric preview, and generate the publish embed automatically.`)
-    .setColor(COLORS.amber)
-    .setFooter({ text: new Date().toISOString() });
+    .setColor(COLORS.amber);
 }
 
 export function buildTicketButtons() {
@@ -41,7 +40,7 @@ export function buildTicketButtons() {
   );
 }
 
-export function buildSchematicEmbed(data, parsed, withImage = true) {
+export function buildSchematicEmbed(data, parsed, withImage = true, imageName = 'preview.png') {
   const value = key => data?.[key] || 'Not provided';
   const embed = new EmbedBuilder()
     .setTitle('Schematic Submission')
@@ -58,13 +57,12 @@ export function buildSchematicEmbed(data, parsed, withImage = true) {
         name: 'Size & Volume',
         value: `Size: ${parsed.size.x} x ${parsed.size.y} x ${parsed.size.z}\nVolume: ${parsed.volume.filled}/${parsed.volume.total}`,
       },
-    )
-    .setFooter({ text: new Date().toISOString() });
+    );
 
-  if (withImage) embed.setImage('attachment://preview.png');
+  if (withImage) embed.setImage(`attachment://${imageName}`);
   return embed;
 }
 
 export function basicEmbed(title, description, color = COLORS.amber) {
-  return new EmbedBuilder().setTitle(title).setDescription(description).setColor(color).setTimestamp();
+  return new EmbedBuilder().setTitle(title).setDescription(description).setColor(color);
 }
