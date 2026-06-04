@@ -18,6 +18,7 @@ const MAX_CANVAS = clampNumber(process.env.MAX_RENDER_CANVAS, 8192, 2048, 8192);
 const SHADE_TOP = 1.0;
 const SHADE_LEFT = 0.6;
 const SHADE_RIGHT = 0.8;
+const FACE_BLEED = N + 0.5;
 
 const faceCanvas = createCanvas(N, N);
 const faceCtx = faceCanvas.getContext('2d');
@@ -41,10 +42,13 @@ export async function renderSchematic(schematic) {
         if (paletteIndex === airIndex || !info || isAirName(info.name)) continue;
 
         const raw = getEffectiveRawBlockName(info, x, y, z, blocks, paletteInfo, size, airIndex);
+        const renderMode = getBlockRenderMode(raw);
+        if (renderMode === 'skip') continue;
+
         if (!faceCache.has(raw)) {
           faceCache.set(raw, await loadFaces(raw));
         }
-        drawList.push({ x, y, z, raw });
+        drawList.push({ x, y, z, raw, renderMode });
       }
     }
   }
@@ -59,7 +63,10 @@ export async function renderSchematic(schematic) {
 
   drawList.sort((a, b) => {
     if (a.y !== b.y) return a.y - b.y;
-    return (b.z - b.x) - (a.z - a.x);
+    const sumA = a.x + a.z;
+    const sumB = b.x + b.z;
+    if (sumA !== sumB) return sumA - sumB;
+    return b.z - a.z;
   });
 
   let tileHW = HW;
@@ -90,11 +97,23 @@ export async function renderSchematic(schematic) {
   const offsetY = -bounds.minY + PAD;
   const scaleRatio = tileHW / N;
 
-  for (const { x, y, z, raw } of drawList) {
-    const cx = (x - z) * tileHW + offsetX;
-    const cy = (x + z) * tileQH - y * tileBH + offsetY;
-    drawBlock(ctx, cx, cy, faceCache.get(raw), tileHW, tileQH, tileBH, scaleRatio);
+  const opaqueDraw = [];
+  const transparentDraw = [];
+  for (const entry of drawList) {
+    if (entry.renderMode === 'transparent') transparentDraw.push(entry);
+    else opaqueDraw.push(entry);
   }
+
+  ctx.globalAlpha = 1;
+  for (const entry of opaqueDraw) {
+    drawEntry(ctx, entry, faceCache, tileHW, tileQH, tileBH, offsetX, offsetY, scaleRatio);
+  }
+
+  ctx.globalAlpha = 0.65;
+  for (const entry of transparentDraw) {
+    drawEntry(ctx, entry, faceCache, tileHW, tileQH, tileBH, offsetX, offsetY, scaleRatio);
+  }
+  ctx.globalAlpha = 1;
 
   return canvas.toBuffer('image/png', { compressionLevel: 9 });
 }
@@ -117,6 +136,17 @@ function calculateBounds(drawList, halfWidth, quarterHeight, blockHeight) {
   }
 
   return { minX, minY, maxX, maxY };
+}
+
+function drawEntry(ctx, entry, faceCache, tileHW, tileQH, tileBH, offsetX, offsetY, scaleRatio) {
+  const faces = faceCache.get(entry.raw);
+  if (!faces) return;
+
+  const heightScale = faces.shape === 'model' ? 1 : getBlockHeightScale(entry.raw);
+  const blockHeight = Math.max(1, Math.round(tileBH * heightScale));
+  const cx = (entry.x - entry.z) * tileHW + offsetX;
+  const cy = (entry.x + entry.z) * tileQH - entry.y * tileBH + offsetY + (tileBH - blockHeight);
+  drawBlock(ctx, cx, cy, faces, tileHW, tileQH, blockHeight, scaleRatio);
 }
 
 function drawBlock(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, scaleRatio) {
@@ -264,7 +294,7 @@ function drawParallelogramFace(ctx, face, rawBlockName, shade, points) {
     origin.x,
     origin.y,
   );
-  drawFace(ctx, face.image, rawBlockName, shade, face.uv, face.rotation, face.tint);
+  drawFace(ctx, face.image, rawBlockName, shade, face.uv, face.rotation, face.tint, FACE_BLEED, FACE_BLEED);
   ctx.restore();
 }
 
@@ -308,7 +338,7 @@ function drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heig
 function drawTopFace(ctx, cx, cy, faces, scaleRatio) {
   ctx.save();
   ctx.setTransform(scaleRatio, scaleRatio * 0.5, -scaleRatio, scaleRatio * 0.5, cx, cy);
-  drawFace(ctx, faces.top, faces.raw, SHADE_TOP, null, 0, faces.tint);
+  drawFace(ctx, faces.top, faces.raw, SHADE_TOP, null, 0, faces.tint, FACE_BLEED, FACE_BLEED);
   ctx.restore();
 }
 
@@ -329,11 +359,11 @@ function drawSideFace(ctx, cx, cy, image, rawBlockName, shade, side, halfWidth, 
   } else {
     ctx.setTransform(scaleRatio, -scaleRatio * 0.5, 0, scaleRatio * heightRatio, cx, cy + quarterHeight * 2);
   }
-  drawFace(ctx, image, rawBlockName, shade);
+  drawFace(ctx, image, rawBlockName, shade, null, 0, null, FACE_BLEED, FACE_BLEED);
   ctx.restore();
 }
 
-function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint = null) {
+function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint = null, width = N, height = N) {
   if (image) {
     const source = textureSource(image, uv);
 
@@ -360,14 +390,14 @@ function drawFace(ctx, image, rawBlockName, shade, uv = null, rotation = 0, tint
       faceCtx.fillRect(0, 0, N, N);
       faceCtx.globalCompositeOperation = 'source-over';
     }
-    ctx.drawImage(faceCanvas, 0, 0, N, N);
+    ctx.drawImage(faceCanvas, 0, 0, width, height);
     return;
   }
 
   const color = getBlockColor(rawBlockName);
   const fallback = shade >= 1 ? color?.top : shade >= 0.75 ? color?.right : color?.left;
   ctx.fillStyle = fallback ?? '#808080';
-  ctx.fillRect(0, 0, N, N);
+  ctx.fillRect(0, 0, width, height);
 }
 
 function logTextureMisses(faceCache) {
@@ -410,6 +440,103 @@ function textureSource(image, uv) {
 
 function normalizeDegrees(degrees) {
   return ((Number(degrees) % 360) + 360) % 360;
+}
+
+const RENDER_SKIP_BLOCKS = new Set([
+  'air', 'cave_air', 'void_air',
+  'redstone_wire', 'redstone_torch', 'redstone_wall_torch',
+  'torch', 'wall_torch', 'soul_torch', 'soul_wall_torch',
+  'lever',
+  'rail', 'powered_rail', 'detector_rail', 'activator_rail',
+  'ladder', 'vine', 'glow_lichen', 'sculk_vein',
+  'string', 'tripwire', 'tripwire_hook',
+  'flower_pot', 'dead_bush', 'grass', 'tall_grass', 'fern', 'large_fern',
+  'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
+  'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy',
+  'cornflower', 'lily_of_the_valley', 'wither_rose', 'sunflower',
+  'lilac', 'rose_bush', 'peony', 'pitcher_plant',
+  'wheat', 'carrots', 'potatoes', 'beetroots', 'melon_stem', 'pumpkin_stem',
+  'sugar_cane', 'bamboo', 'bamboo_sapling',
+  'kelp', 'kelp_plant', 'seagrass', 'tall_seagrass',
+  'nether_sprouts', 'crimson_roots', 'warped_roots',
+  'fire', 'soul_fire', 'cobweb',
+  'cake', 'decorated_pot',
+]);
+
+const TRANSPARENT_BLOCKS = new Set([
+  'glass', 'glass_pane', 'tinted_glass',
+  'ice', 'frosted_ice', 'packed_ice', 'blue_ice',
+  'water', 'lava',
+  'slime_block', 'honey_block',
+  'scaffolding',
+  'barrier', 'structure_void',
+  'amethyst_cluster', 'large_amethyst_bud', 'medium_amethyst_bud', 'small_amethyst_bud',
+  'chorus_flower', 'chorus_plant',
+]);
+
+const THIN_HEIGHT_BLOCKS = new Set([
+  'repeater',
+  'comparator',
+  'daylight_detector',
+  'cauldron',
+  'composter',
+]);
+
+const COLOR_NAMES = [
+  'white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink',
+  'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black',
+];
+
+for (const color of COLOR_NAMES) {
+  RENDER_SKIP_BLOCKS.add(`${color}_candle`);
+  RENDER_SKIP_BLOCKS.add(`${color}_button`);
+  RENDER_SKIP_BLOCKS.add(`${color}_pressure_plate`);
+  TRANSPARENT_BLOCKS.add(`${color}_stained_glass`);
+  TRANSPARENT_BLOCKS.add(`${color}_stained_glass_pane`);
+}
+
+for (const wood of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'bamboo', 'cherry', 'crimson', 'warped']) {
+  RENDER_SKIP_BLOCKS.add(`${wood}_button`);
+  RENDER_SKIP_BLOCKS.add(`${wood}_pressure_plate`);
+  RENDER_SKIP_BLOCKS.add(`${wood}_sign`);
+  RENDER_SKIP_BLOCKS.add(`${wood}_wall_sign`);
+  RENDER_SKIP_BLOCKS.add(`${wood}_hanging_sign`);
+}
+
+RENDER_SKIP_BLOCKS.add('stone_button');
+RENDER_SKIP_BLOCKS.add('polished_blackstone_button');
+RENDER_SKIP_BLOCKS.add('stone_pressure_plate');
+RENDER_SKIP_BLOCKS.add('polished_blackstone_pressure_plate');
+RENDER_SKIP_BLOCKS.add('light_weighted_pressure_plate');
+RENDER_SKIP_BLOCKS.add('heavy_weighted_pressure_plate');
+RENDER_SKIP_BLOCKS.add('candle');
+RENDER_SKIP_BLOCKS.add('sign');
+RENDER_SKIP_BLOCKS.add('wall_sign');
+RENDER_SKIP_BLOCKS.add('hanging_sign');
+
+function getBlockRenderMode(blockName) {
+  const name = cleanBlockName(blockName);
+  if (RENDER_SKIP_BLOCKS.has(name)) return 'skip';
+  if (TRANSPARENT_BLOCKS.has(name)) return 'transparent';
+  return 'opaque';
+}
+
+function getBlockHeightScale(blockName) {
+  const name = cleanBlockName(blockName);
+  if (name.endsWith('_slab')) return 0.5;
+  if (name === 'snow') return 0.125;
+  if (name === 'dirt_path' || name === 'farmland') return 0.94;
+  if (name === 'cake') return 0.5;
+  if (THIN_HEIGHT_BLOCKS.has(name)) return 0.125;
+  return 1;
+}
+
+function cleanBlockName(blockName) {
+  return String(blockName ?? '')
+    .replace(/^minecraft:/, '')
+    .split('[')[0]
+    .trim()
+    .toLowerCase();
 }
 
 const HORIZONTAL_DIRECTIONS = [
