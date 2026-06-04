@@ -1,19 +1,70 @@
-import { buildPanelButtons, buildPanelEmbed } from '../utils/embeds.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
+import { log } from '../utils/logger.js';
 
-export async function refreshPanel(guild) {
-  const channel = await guild.channels.fetch(process.env.PANEL_CHANNEL_ID);
-  if (!channel?.isTextBased()) throw new Error('PANEL_CHANNEL_ID does not point to a text channel');
+const PANEL_BUTTON_ID = 'open_schematic_ticket';
 
-  const messages = await channel.messages.fetch({ limit: 100 });
-  const oldPanel = messages.find(message =>
-    message.author.id === guild.client.user.id &&
-    message.embeds.some(embed => embed.footer?.text === 'Crackers Schematics')
+async function findExistingPanel(channel, botUserId) {
+  try {
+    const messages = await channel.messages.fetch({ limit: 100 });
+
+    return messages.find(message => {
+      if (message.author.id !== botUserId) return false;
+      return message.components?.some(row =>
+        row.components?.some(component => component.customId === PANEL_BUTTON_ID),
+      );
+    }) ?? null;
+  } catch (error) {
+    log.warn('[PanelHandler] Could not fetch messages to find existing panel:', error.message);
+    return null;
+  }
+}
+
+function buildPanelEmbed(guild) {
+  return new EmbedBuilder()
+    .setTitle('\u{1F4CB} Schematic Submissions')
+    .setDescription(
+      'Click the button below to open a submission ticket and publish your schematic.\n' +
+      'You will be able to add details, credits, and instructions after uploading.',
+    )
+    .setColor(0xF5A623)
+    .setFooter({
+      text: 'Crackers Schematics',
+      iconURL: guild?.iconURL() ?? undefined,
+    });
+}
+
+function buildPanelRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(PANEL_BUTTON_ID)
+      .setLabel('Publish a Schematic')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('\u{1F4E6}'),
   );
+}
 
-  if (oldPanel) await oldPanel.delete().catch(() => null);
+export async function postOrRefreshPanel(channel, botUserId) {
+  if (!channel?.isTextBased()) {
+    throw new Error('PANEL_CHANNEL_ID does not point to a text channel');
+  }
 
-  return channel.send({
-    embeds: [buildPanelEmbed(guild)],
-    components: [buildPanelButtons()],
+  const existing = await findExistingPanel(channel, botUserId);
+  if (existing) {
+    try {
+      await existing.delete();
+      log.info(`[PanelHandler] Deleted existing panel (message ${existing.id})`);
+    } catch (error) {
+      log.warn('[PanelHandler] Could not delete old panel:', error.message);
+    }
+  } else {
+    log.info('[PanelHandler] No existing panel found; posting fresh.');
+  }
+
+  const newPanel = await channel.send({
+    embeds: [buildPanelEmbed(channel.guild)],
+    components: [buildPanelRow()],
   });
+
+  log.info(`[PanelHandler] Panel posted (message ${newPanel.id})`);
+  return newPanel;
 }
