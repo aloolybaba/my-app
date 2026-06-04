@@ -174,7 +174,6 @@ export async function closeTicket(interaction) {
       .addFields(
         { name: 'Channel', value: `#${channel.name}`, inline: true },
         { name: 'Closed by', value: closedBy.toString(), inline: true },
-        { name: 'Closed at', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false },
       )
       .setFooter({ text: 'Crackers Schematics' });
 
@@ -199,7 +198,6 @@ export async function closeTicket(interaction) {
         )
         .addFields(
           { name: 'Closed by', value: closedBy.toString(), inline: true },
-          { name: 'Closed at', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
         )
         .setFooter({ text: 'Crackers Schematics' });
 
@@ -286,5 +284,22 @@ async function postTranscriptAndGetURL(channel, transcriptChannel, transcriptEmb
     files: [htmlAttachment],
   });
 
-  return sentMessage.attachments.first()?.url ?? null;
+  const transcriptURL = sentMessage.attachments.first()?.url ?? null;
+  if (transcriptURL) {
+    const linkedEmbed = EmbedBuilder.from(transcriptEmbed)
+      .setDescription(`**[View transcript](${transcriptURL})**`)
+      .addFields({ name: 'Transcript URL', value: transcriptURL, inline: false });
+
+    await sentMessage.edit({
+      embeds: [linkedEmbed],
+      components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel('View Transcript')
+          .setStyle(ButtonStyle.Link)
+          .setURL(transcriptURL),
+      )],
+    });
+  }
+
+  return transcriptURL;
 }
