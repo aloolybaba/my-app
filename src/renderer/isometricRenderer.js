@@ -839,7 +839,17 @@ function inferPistonStates(baseStates, x, y, z, blocks, paletteInfo, size, airIn
   if (facing) {
     if (!explicitExtended) {
       const front = getNeighborInfo(x, y, z, facing.dx, facing.dy, facing.dz, blocks, paletteInfo, size, airIndex);
-      states.extended = front?.name === 'piston_head' ? 'true' : 'false';
+      if (front?.name === 'piston_head') {
+        states.extended = 'true';
+      } else {
+        const nearbyHead = findAdjacentPistonHeadDirection(x, y, z, blocks, paletteInfo, size, airIndex);
+        if (nearbyHead) {
+          states.facing = nearbyHead.key;
+          states.extended = 'true';
+        } else {
+          states.extended = 'false';
+        }
+      }
     }
     return states;
   }
