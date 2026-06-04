@@ -9,27 +9,42 @@ const VERSION = process.env.MINECRAFT_TEXTURE_VERSION ?? '1.21.4';
 const MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const CACHE_ROOT = './cache';
 const TEXTURE_DIR = path.join(CACHE_ROOT, 'textures', 'block');
+const BLOCKSTATE_DIR = path.join(CACHE_ROOT, 'blockstates');
+const MODEL_DIR = path.join(CACHE_ROOT, 'models', 'block');
 const JAR_PATH = path.join(CACHE_ROOT, `client-${VERSION}.jar`);
 const TEXTURE_PREFIX = 'assets/minecraft/textures/block/';
-const REQUIRED_TEXTURES = ['stone.png', 'grass_block_top.png', 'rail.png', 'redstone_dust_dot.png'];
+const BLOCKSTATE_PREFIX = 'assets/minecraft/blockstates/';
+const MODEL_PREFIX = 'assets/minecraft/models/block/';
+const REQUIRED_ASSETS = [
+  path.join(TEXTURE_DIR, 'stone.png'),
+  path.join(TEXTURE_DIR, 'grass_block_top.png'),
+  path.join(TEXTURE_DIR, 'rail.png'),
+  path.join(BLOCKSTATE_DIR, 'stone.json'),
+  path.join(BLOCKSTATE_DIR, 'observer.json'),
+  path.join(MODEL_DIR, 'cube_all.json'),
+  path.join(MODEL_DIR, 'observer.json'),
+];
 
 const imageCache = new Map();
+const jsonCache = new Map();
 let ready = false;
 
 export async function initTextures() {
   fs.mkdirSync(TEXTURE_DIR, { recursive: true });
+  fs.mkdirSync(BLOCKSTATE_DIR, { recursive: true });
+  fs.mkdirSync(MODEL_DIR, { recursive: true });
 
   const alreadyCached = fs.existsSync(JAR_PATH) &&
-    REQUIRED_TEXTURES.every(file => fs.existsSync(path.join(TEXTURE_DIR, file)));
+    REQUIRED_ASSETS.every(file => fs.existsSync(file));
 
   if (!alreadyCached) {
     log.info('[TextureManager] Downloading Minecraft client JAR...');
     await downloadJar();
-    log.info('[TextureManager] Extracting block textures...');
-    await extractTextures();
+    log.info('[TextureManager] Extracting Minecraft block assets...');
+    await extractAssets();
     log.info('[TextureManager] Extraction complete.');
   } else {
-    log.info('[TextureManager] Using cached textures.');
+    log.info('[TextureManager] Using cached Minecraft block assets.');
   }
 
   ready = true;
@@ -37,7 +52,7 @@ export async function initTextures() {
 
 export async function getTexture(name) {
   if (!name) return null;
-  const key = name.replace(/\.png$/, '');
+  const key = normalizeTextureName(name);
   if (imageCache.has(key)) return imageCache.get(key);
 
   const filePath = path.join(TEXTURE_DIR, `${key}.png`);
@@ -55,6 +70,14 @@ export async function getTexture(name) {
 
 export function isReady() {
   return ready;
+}
+
+export function getBlockstateJson(name) {
+  return readJson(path.join(BLOCKSTATE_DIR, `${cleanJsonName(name)}.json`));
+}
+
+export function getBlockModelJson(name) {
+  return readJson(path.join(MODEL_DIR, `${cleanJsonName(name)}.json`));
 }
 
 async function downloadJar() {
@@ -76,22 +99,68 @@ async function downloadJar() {
   fs.writeFileSync(JAR_PATH, Buffer.from(await jarResponse.arrayBuffer()));
 }
 
-async function extractTextures() {
+async function extractAssets() {
   const jar = fs.readFileSync(JAR_PATH);
   const entries = readZipCentralDirectory(jar);
-  let extracted = 0;
+  let extractedTextures = 0;
+  let extractedBlockstates = 0;
+  let extractedModels = 0;
 
   for (const entry of entries) {
-    if (!entry.name.startsWith(TEXTURE_PREFIX) || !entry.name.endsWith('.png')) continue;
-
-    const destination = path.join(TEXTURE_DIR, path.basename(entry.name));
+    const destination = getAssetDestination(entry.name);
+    if (!destination) continue;
     if (fs.existsSync(destination)) continue;
 
     fs.writeFileSync(destination, readZipEntryData(jar, entry));
-    extracted += 1;
+    if (entry.name.startsWith(TEXTURE_PREFIX)) extractedTextures += 1;
+    else if (entry.name.startsWith(BLOCKSTATE_PREFIX)) extractedBlockstates += 1;
+    else if (entry.name.startsWith(MODEL_PREFIX)) extractedModels += 1;
   }
 
-  log.info(`[TextureManager] Extracted ${extracted} block texture(s).`);
+  log.info(`[TextureManager] Extracted ${extractedTextures} texture(s), ${extractedBlockstates} blockstate(s), ${extractedModels} model(s).`);
+}
+
+function getAssetDestination(entryName) {
+  if (entryName.startsWith(TEXTURE_PREFIX) && entryName.endsWith('.png')) {
+    return path.join(TEXTURE_DIR, path.basename(entryName));
+  }
+  if (entryName.startsWith(BLOCKSTATE_PREFIX) && entryName.endsWith('.json')) {
+    return path.join(BLOCKSTATE_DIR, path.basename(entryName));
+  }
+  if (entryName.startsWith(MODEL_PREFIX) && entryName.endsWith('.json')) {
+    return path.join(MODEL_DIR, path.basename(entryName));
+  }
+  return null;
+}
+
+function normalizeTextureName(name) {
+  return name
+    .replace(/\.png$/, '')
+    .replace(/^minecraft:/, '')
+    .replace(/^block\//, '')
+    .replace(/^textures\/block\//, '');
+}
+
+function cleanJsonName(name) {
+  return name
+    .replace(/^minecraft:/, '')
+    .replace(/^block\//, '')
+    .replace(/\.json$/, '');
+}
+
+function readJson(filePath) {
+  if (jsonCache.has(filePath)) return jsonCache.get(filePath);
+  if (!fs.existsSync(filePath)) return null;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    jsonCache.set(filePath, parsed);
+    return parsed;
+  } catch (error) {
+    log.warn(`[TextureManager] Could not parse JSON asset ${filePath}:`, error);
+    jsonCache.set(filePath, null);
+    return null;
+  }
 }
 
 function readZipCentralDirectory(buffer) {
