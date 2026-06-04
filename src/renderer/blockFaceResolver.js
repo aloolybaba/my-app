@@ -30,34 +30,7 @@ const sideFlat = (texture, side = 'both') => ({ top: null, left: tex(texture), r
 const cross = texture => ({ top: null, left: tex(texture), right: tex(texture), shape: 'cross' });
 
 function shouldUseManualShape(name) {
-  return name.endsWith('_slab') ||
-    name.endsWith('_stairs') ||
-    name.endsWith('_pane') ||
-    name.endsWith('_carpet') ||
-    name.endsWith('_button') ||
-    name.endsWith('_pressure_plate') ||
-    name === 'snow' ||
-    name === 'lily_pad' ||
-    name === 'iron_bars' ||
-    [
-      'redstone_wire',
-      'repeater',
-      'comparator',
-      'redstone_torch',
-      'redstone_wall_torch',
-      'torch',
-      'wall_torch',
-      'soul_torch',
-      'soul_wall_torch',
-      'rail',
-      'powered_rail',
-      'detector_rail',
-      'activator_rail',
-      'ladder',
-      'lever',
-      'heavy_weighted_pressure_plate',
-      'light_weighted_pressure_plate',
-    ].includes(name);
+  return false;
 }
 
 function resolveFromBlockstate(name, states) {
@@ -73,9 +46,12 @@ function resolveFromBlockstate(name, states) {
 
   if (!candidates.length) return null;
 
+  const elements = candidates.flatMap(({ spec, model }) => modelToElements(model, spec));
+  if (elements.length) return { shape: 'model', elements };
+
   const top = pickWorldFaceTexture(candidates, 'up');
-  const left = pickWorldFaceTexture(candidates, 'west');
-  const right = pickWorldFaceTexture(candidates, 'south');
+  const left = pickWorldFaceTexture(candidates, 'south');
+  const right = pickWorldFaceTexture(candidates, 'east');
   const fallback = top ?? left ?? right;
   if (!fallback) return null;
 
@@ -152,7 +128,7 @@ function resolveModel(modelRef, seen = new Set()) {
 
 function pickWorldFaceTexture(candidates, worldDirection) {
   for (const { spec, model } of candidates) {
-    const localDirection = unrotateDirectionY(worldDirection, spec.y);
+    const localDirection = unrotateDirection(worldDirection, spec);
     const texture = pickModelFaceTexture(model, localDirection) ?? pickAnyModelTexture(model);
     if (texture) return texture;
   }
@@ -217,23 +193,138 @@ function cleanModelName(modelRef) {
     .replace(/\.json$/, '');
 }
 
-function unrotateDirectionY(direction, degrees = 0) {
-  const steps = (((Number(degrees) / 90) % 4) + 4) % 4;
+function modelToElements(model, spec) {
+  const output = [];
+
+  for (const element of model.elements ?? []) {
+    const rotatedBounds = rotateBounds(element.from ?? [0, 0, 0], element.to ?? [16, 16, 16], spec, element.rotation);
+    const faces = {};
+
+    for (const [localDirection, face] of Object.entries(element.faces ?? {})) {
+      const worldDirection = rotateDirection(localDirection, spec);
+      const texture = resolveTextureReference(face.texture, model.textures) ?? pickAnyModelTexture(model);
+      if (!texture) continue;
+      faces[worldDirection] = {
+        texture,
+        uv: Array.isArray(face.uv) ? face.uv : null,
+      };
+    }
+
+    const fallback = Object.values(faces)[0] ?? null;
+    if (!fallback) continue;
+
+    output.push({
+      from: rotatedBounds.from,
+      to: rotatedBounds.to,
+      top: faces.up ?? fallback,
+      left: faces.south ?? fallback,
+      right: faces.east ?? fallback,
+    });
+  }
+
+  return output;
+}
+
+function rotateBounds(from, to, spec, elementRotation = null) {
+  const corners = [];
+  for (const x of [from[0], to[0]]) {
+    for (const y of [from[1], to[1]]) {
+      for (const z of [from[2], to[2]]) {
+        corners.push(rotatePoint(rotateElementPoint([x, y, z], elementRotation), spec));
+      }
+    }
+  }
+
+  return {
+    from: [
+      Math.min(...corners.map(point => point[0])),
+      Math.min(...corners.map(point => point[1])),
+      Math.min(...corners.map(point => point[2])),
+    ],
+    to: [
+      Math.max(...corners.map(point => point[0])),
+      Math.max(...corners.map(point => point[1])),
+      Math.max(...corners.map(point => point[2])),
+    ],
+  };
+}
+
+function rotateElementPoint(point, rotation) {
+  if (!rotation?.axis || !Number(rotation.angle)) return point;
+  const origin = rotation.origin ?? [8, 8, 8];
+  const angle = Number(rotation.angle) * Math.PI / 180;
+  const sin = Math.sin(angle);
+  const cos = Math.cos(angle);
+  let [x, y, z] = point.map((value, index) => value - origin[index]);
+
+  if (rotation.axis === 'x') {
+    [y, z] = [y * cos - z * sin, y * sin + z * cos];
+  } else if (rotation.axis === 'y') {
+    [x, z] = [x * cos + z * sin, -x * sin + z * cos];
+  } else if (rotation.axis === 'z') {
+    [x, y] = [x * cos - y * sin, x * sin + y * cos];
+  }
+
+  return [x + origin[0], y + origin[1], z + origin[2]];
+}
+
+function rotatePoint(point, spec) {
+  let [x, y, z] = point.map(value => value - 8);
+
+  for (let i = 0; i < rotationSteps(spec.x); i += 1) {
+    [y, z] = [-z, y];
+  }
+
+  for (let i = 0; i < rotationSteps(spec.y); i += 1) {
+    [x, z] = [z, -x];
+  }
+
+  return [x + 8, y + 8, z + 8].map(value => Math.max(0, Math.min(16, value)));
+}
+
+function rotateDirection(direction, spec) {
   let result = direction;
-  for (let i = 0; i < steps; i += 1) result = rotateYCounterClockwise(result);
+  for (let i = 0; i < rotationSteps(spec.x); i += 1) result = rotateXClockwise(result);
+  for (let i = 0; i < rotationSteps(spec.y); i += 1) result = rotateYClockwise(result);
   return result;
 }
 
-function rotateYCounterClockwise(direction) {
+function unrotateDirection(direction, spec) {
+  let result = direction;
+  for (let i = 0; i < rotationSteps(-spec.y); i += 1) result = rotateYClockwise(result);
+  for (let i = 0; i < rotationSteps(-spec.x); i += 1) result = rotateXClockwise(result);
+  return result;
+}
+
+function rotationSteps(degrees = 0) {
+  return (((Number(degrees) / 90) % 4) + 4) % 4;
+}
+
+function rotateYClockwise(direction) {
   switch (direction) {
     case 'north':
-      return 'east';
-    case 'east':
       return 'south';
     case 'south':
       return 'west';
     case 'west':
       return 'north';
+    case 'east':
+      return 'north';
+    default:
+      return direction;
+  }
+}
+
+function rotateXClockwise(direction) {
+  switch (direction) {
+    case 'up':
+      return 'south';
+    case 'south':
+      return 'down';
+    case 'down':
+      return 'north';
+    case 'north':
+      return 'up';
     default:
       return direction;
   }
