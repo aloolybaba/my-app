@@ -48,7 +48,7 @@ export async function renderSchematic(schematic) {
         if (!faceCache.has(raw)) {
           faceCache.set(raw, await loadFaces(raw));
         }
-        drawList.push({ x, y, z, raw, renderMode });
+        drawList.push({ x, y, z, raw });
       }
     }
   }
@@ -97,23 +97,10 @@ export async function renderSchematic(schematic) {
   const offsetY = -bounds.minY + PAD;
   const scaleRatio = tileHW / N;
 
-  const opaqueDraw = [];
-  const transparentDraw = [];
+  ctx.globalAlpha = 1;
   for (const entry of drawList) {
-    if (entry.renderMode === 'transparent') transparentDraw.push(entry);
-    else opaqueDraw.push(entry);
-  }
-
-  ctx.globalAlpha = 1;
-  for (const entry of opaqueDraw) {
     drawEntry(ctx, entry, faceCache, tileHW, tileQH, tileBH, offsetX, offsetY, scaleRatio);
   }
-
-  ctx.globalAlpha = 0.65;
-  for (const entry of transparentDraw) {
-    drawEntry(ctx, entry, faceCache, tileHW, tileQH, tileBH, offsetX, offsetY, scaleRatio);
-  }
-  ctx.globalAlpha = 1;
 
   return canvas.toBuffer('image/png', { compressionLevel: 9 });
 }
@@ -463,17 +450,6 @@ const RENDER_SKIP_BLOCKS = new Set([
   'cake', 'decorated_pot',
 ]);
 
-const TRANSPARENT_BLOCKS = new Set([
-  'glass', 'glass_pane', 'tinted_glass',
-  'ice', 'frosted_ice', 'packed_ice', 'blue_ice',
-  'water', 'lava',
-  'slime_block', 'honey_block',
-  'scaffolding',
-  'barrier', 'structure_void',
-  'amethyst_cluster', 'large_amethyst_bud', 'medium_amethyst_bud', 'small_amethyst_bud',
-  'chorus_flower', 'chorus_plant',
-]);
-
 const THIN_HEIGHT_BLOCKS = new Set([
   'repeater',
   'comparator',
@@ -491,8 +467,6 @@ for (const color of COLOR_NAMES) {
   RENDER_SKIP_BLOCKS.add(`${color}_candle`);
   RENDER_SKIP_BLOCKS.add(`${color}_button`);
   RENDER_SKIP_BLOCKS.add(`${color}_pressure_plate`);
-  TRANSPARENT_BLOCKS.add(`${color}_stained_glass`);
-  TRANSPARENT_BLOCKS.add(`${color}_stained_glass_pane`);
 }
 
 for (const wood of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'bamboo', 'cherry', 'crimson', 'warped']) {
@@ -517,7 +491,6 @@ RENDER_SKIP_BLOCKS.add('hanging_sign');
 function getBlockRenderMode(blockName) {
   const name = cleanBlockName(blockName);
   if (RENDER_SKIP_BLOCKS.has(name)) return 'skip';
-  if (TRANSPARENT_BLOCKS.has(name)) return 'transparent';
   return 'opaque';
 }
 
