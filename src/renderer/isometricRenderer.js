@@ -15,10 +15,22 @@ const BH = BASE_BH * RENDER_SCALE;
 const PAD = 32 * RENDER_SCALE;
 const MAX_CANVAS = clampNumber(process.env.MAX_RENDER_CANVAS, 10000, 2048, 12000);
 
-const SHADE_TOP = 1.0;
-const SHADE_LEFT = 0.6;
-const SHADE_RIGHT = 0.8;
+const SHADE_TOP = 0.9;
+const SHADE_LEFT = 0.55;
+const SHADE_RIGHT = 0.75;
 const FACE_BLEED = N + 0.5;
+
+const BLOCK_TOP_SHADE = {
+  repeater: 0.85,
+  comparator: 0.85,
+  redstone_wire: 0.8,
+  redstone_lamp: 0.88,
+  sea_lantern: 0.88,
+  glowstone: 0.88,
+  shroomlight: 0.88,
+  redstone_torch: 0.82,
+  redstone_wall_torch: 0.82,
+};
 
 const faceCanvas = createCanvas(N, N);
 const faceCtx = faceCanvas.getContext('2d');
@@ -474,8 +486,12 @@ function drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heig
 function drawTopFace(ctx, cx, cy, faces, scaleRatio) {
   ctx.save();
   ctx.setTransform(scaleRatio, scaleRatio * 0.5, -scaleRatio, scaleRatio * 0.5, cx, cy);
-  drawFace(ctx, faces.top, faces.raw, SHADE_TOP, null, 0, faces.tint, FACE_BLEED, FACE_BLEED);
+  drawFace(ctx, faces.top, faces.raw, getTopShade(faces.raw), null, 0, faces.tint, FACE_BLEED, FACE_BLEED);
   ctx.restore();
+}
+
+function getTopShade(rawBlockName) {
+  return BLOCK_TOP_SHADE[cleanBlockName(rawBlockName)] ?? SHADE_TOP;
 }
 
 function drawVisibleSides(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heightRatio) {
@@ -589,7 +605,6 @@ const RENDER_SKIP_BLOCKS = new Set(['air', 'cave_air', 'void_air']);
 const THIN_HEIGHT_BLOCKS = new Set([
   'repeater',
   'comparator',
-  'lever',
   'daylight_detector',
   'cauldron',
   'composter',
@@ -607,6 +622,13 @@ function getBlockHeightScale(blockName) {
   if (name === 'snow') return 0.125;
   if (name === 'dirt_path' || name === 'farmland') return 0.94;
   if (name === 'cake') return 0.5;
+  if (name === 'redstone_torch') return 0.35;
+  if (name === 'redstone_wall_torch') return 0.35;
+  if (name === 'torch') return 0.35;
+  if (name === 'wall_torch') return 0.35;
+  if (name === 'soul_torch') return 0.35;
+  if (name === 'soul_wall_torch') return 0.35;
+  if (name === 'lever') return 0.35;
   if (THIN_HEIGHT_BLOCKS.has(name)) return 0.125;
   return 1;
 }
