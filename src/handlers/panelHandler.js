@@ -48,22 +48,25 @@ export async function postOrRefreshPanel(channel, botUserId) {
     throw new Error('PANEL_CHANNEL_ID does not point to a text channel');
   }
 
+  const payload = {
+    embeds: [buildPanelEmbed(channel.guild)],
+    components: [buildPanelRow()],
+  };
+
   const existing = await findExistingPanel(channel, botUserId);
   if (existing) {
     try {
-      await existing.delete();
-      log.info(`[PanelHandler] Deleted existing panel (message ${existing.id})`);
+      const editedPanel = await existing.edit(payload);
+      log.info(`[PanelHandler] Edited existing panel (message ${existing.id})`);
+      return editedPanel;
     } catch (error) {
-      log.warn('[PanelHandler] Could not delete old panel:', error.message);
+      log.warn('[PanelHandler] Could not edit old panel; posting fresh:', error.message);
     }
   } else {
     log.info('[PanelHandler] No existing panel found; posting fresh.');
   }
 
-  const newPanel = await channel.send({
-    embeds: [buildPanelEmbed(channel.guild)],
-    components: [buildPanelRow()],
-  });
+  const newPanel = await channel.send(payload);
 
   log.info(`[PanelHandler] Panel posted (message ${newPanel.id})`);
   return newPanel;
