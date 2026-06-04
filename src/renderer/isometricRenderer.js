@@ -30,6 +30,16 @@ export async function renderSchematic(schematic) {
     if (i === airIndex) continue;
     const raw = palette[i].rawName ?? palette[i].name;
     const faces = resolveFaces(raw);
+
+    if (faces.shape === 'model') {
+      faceCache.set(i, {
+        raw,
+        shape: 'model',
+        elements: await loadModelElements(faces.elements, raw),
+      });
+      continue;
+    }
+
     const [top, left, right] = await Promise.all([
       getTexture(faces.top?.replace('.png', '')),
       getTexture(faces.left?.replace('.png', '')),
@@ -157,7 +167,86 @@ function drawBlock(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, sc
     return;
   }
 
+  if (faces.shape === 'model') {
+    drawModel(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, scaleRatio);
+    return;
+  }
+
   drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, 1);
+}
+
+async function loadModelElements(elements, rawBlockName) {
+  return Promise.all(elements.map(async element => ({
+    from: element.from,
+    to: element.to,
+    top: {
+      image: await getTexture(element.top?.texture?.replace('.png', '')),
+      uv: element.top?.uv,
+    },
+    left: {
+      image: await getTexture(element.left?.texture?.replace('.png', '')),
+      uv: element.left?.uv,
+    },
+    right: {
+      image: await getTexture(element.right?.texture?.replace('.png', '')),
+      uv: element.right?.uv,
+    },
+    raw: rawBlockName,
+  })));
+}
+
+function drawModel(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, scaleRatio) {
+  const elements = [...faces.elements].sort((a, b) => {
+    const ay = a.to[1] - a.from[1];
+    const by = b.to[1] - b.from[1];
+    return ay - by || (a.to[2] - a.to[0]) - (b.to[2] - b.to[0]);
+  });
+
+  for (const element of elements) {
+    drawModelElement(ctx, cx, cy, element, halfWidth, quarterHeight, blockHeight, scaleRatio);
+  }
+}
+
+function drawModelElement(ctx, cx, cy, element, halfWidth, quarterHeight, blockHeight, scaleRatio) {
+  const fromX = element.from[0] / 16;
+  const fromY = element.from[1] / 16;
+  const fromZ = element.from[2] / 16;
+  const toX = element.to[0] / 16;
+  const toY = element.to[1] / 16;
+  const toZ = element.to[2] / 16;
+  const sizeX = Math.max(0.01, toX - fromX);
+  const sizeY = Math.max(0.01, toY - fromY);
+  const sizeZ = Math.max(0.01, toZ - fromZ);
+
+  const topX = cx + (fromX - fromZ) * halfWidth;
+  const topY = cy + (fromX + fromZ) * quarterHeight - (toY - 1) * blockHeight;
+  drawModelTopFace(ctx, topX, topY, element.top, element.raw, scaleRatio, sizeX, sizeZ);
+
+  const leftX = cx + (fromX - toZ) * halfWidth;
+  const leftY = cy + (fromX + toZ) * quarterHeight - (toY - 1) * blockHeight;
+  drawModelSideFace(ctx, leftX, leftY, element.left, element.raw, SHADE_LEFT, scaleRatio, sizeX, sizeY, 'left');
+
+  const rightX = cx + (toX - toZ) * halfWidth;
+  const rightY = cy + (toX + toZ) * quarterHeight - (toY - 1) * blockHeight;
+  drawModelSideFace(ctx, rightX, rightY, element.right, element.raw, SHADE_RIGHT, scaleRatio, sizeZ, sizeY, 'right');
+}
+
+function drawModelTopFace(ctx, x, y, face, rawBlockName, scaleRatio, sizeX, sizeZ) {
+  ctx.save();
+  ctx.setTransform(scaleRatio * sizeX, scaleRatio * 0.5 * sizeX, -scaleRatio * sizeZ, scaleRatio * 0.5 * sizeZ, x, y);
+  drawFace(ctx, face.image, rawBlockName, SHADE_TOP, face.uv);
+  ctx.restore();
+}
+
+function drawModelSideFace(ctx, x, y, face, rawBlockName, shade, scaleRatio, widthRatio, heightRatio, side) {
+  ctx.save();
+  if (side === 'left') {
+    ctx.setTransform(scaleRatio * widthRatio, scaleRatio * 0.5 * widthRatio, 0, scaleRatio * heightRatio, x, y);
+  } else {
+    ctx.setTransform(scaleRatio * widthRatio, -scaleRatio * 0.5 * widthRatio, 0, scaleRatio * heightRatio, x, y);
+  }
+  drawFace(ctx, face.image, rawBlockName, shade, face.uv);
+  ctx.restore();
 }
 
 function drawStairs(ctx, cx, cy, faces, halfWidth, quarterHeight, blockHeight, scaleRatio) {
@@ -217,11 +306,12 @@ function drawSideFace(ctx, cx, cy, image, rawBlockName, shade, side, halfWidth, 
   ctx.restore();
 }
 
-function drawFace(ctx, image, rawBlockName, shade) {
+function drawFace(ctx, image, rawBlockName, shade, uv = null) {
   if (image) {
+    const source = textureSource(image, uv);
     faceCtx.globalCompositeOperation = 'source-over';
     faceCtx.clearRect(0, 0, N, N);
-    faceCtx.drawImage(image, 0, 0, Math.min(N, image.width), Math.min(N, image.height), 0, 0, N, N);
+    faceCtx.drawImage(image, source.x, source.y, source.width, source.height, 0, 0, N, N);
     if (shade < 1) {
       faceCtx.globalCompositeOperation = 'source-atop';
       faceCtx.fillStyle = `rgba(0,0,0,${1 - shade})`;
@@ -257,5 +347,21 @@ function hasMissingRequiredTexture(faces) {
     return !faces.left || !faces.right;
   }
   if (faces.shape === 'cross') return !faces.left || !faces.right;
+  if (faces.shape === 'model') {
+    return faces.elements.some(element => !element.top.image && !element.left.image && !element.right.image);
+  }
   return !faces.top || !faces.left || !faces.right;
+}
+
+function textureSource(image, uv) {
+  if (!Array.isArray(uv) || uv.length !== 4) {
+    return { x: 0, y: 0, width: Math.min(N, image.width), height: Math.min(N, image.height) };
+  }
+
+  const [u1, v1, u2, v2] = uv;
+  const x = Math.max(0, Math.min(image.width, Math.min(u1, u2)));
+  const y = Math.max(0, Math.min(image.height, Math.min(v1, v2)));
+  const width = Math.max(1, Math.min(image.width - x, Math.abs(u2 - u1)));
+  const height = Math.max(1, Math.min(image.height - y, Math.abs(v2 - v1)));
+  return { x, y, width, height };
 }
