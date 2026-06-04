@@ -207,18 +207,21 @@ function modelToElements(model, spec) {
       faces[worldDirection] = {
         texture,
         uv: Array.isArray(face.uv) ? face.uv : null,
+        rotation: Number(face.rotation ?? 0),
       };
     }
 
-    const fallback = Object.values(faces)[0] ?? null;
-    if (!fallback) continue;
+    const visibleFaces = {
+      top: faces.up ?? null,
+      left: faces.south ?? null,
+      right: faces.east ?? null,
+    };
+    if (!visibleFaces.top && !visibleFaces.left && !visibleFaces.right) continue;
 
     output.push({
       from: rotatedBounds.from,
       to: rotatedBounds.to,
-      top: faces.up ?? fallback,
-      left: faces.south ?? fallback,
-      right: faces.east ?? fallback,
+      ...visibleFaces,
     });
   }
 
@@ -276,7 +279,7 @@ function rotatePoint(point, spec) {
   }
 
   for (let i = 0; i < rotationSteps(spec.y); i += 1) {
-    [x, z] = [z, -x];
+    [x, z] = [-z, x];
   }
 
   return [x + 8, y + 8, z + 8].map(value => Math.max(0, Math.min(16, value)));
@@ -303,12 +306,12 @@ function rotationSteps(degrees = 0) {
 function rotateYClockwise(direction) {
   switch (direction) {
     case 'north':
+      return 'east';
+    case 'east':
       return 'south';
     case 'south':
       return 'west';
     case 'west':
-      return 'north';
-    case 'east':
       return 'north';
     default:
       return direction;
