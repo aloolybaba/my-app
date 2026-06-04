@@ -11,6 +11,7 @@ const CACHE_ROOT = './cache';
 const TEXTURE_DIR = path.join(CACHE_ROOT, 'textures', 'block');
 const JAR_PATH = path.join(CACHE_ROOT, `client-${VERSION}.jar`);
 const TEXTURE_PREFIX = 'assets/minecraft/textures/block/';
+const REQUIRED_TEXTURES = ['stone.png', 'grass_block_top.png', 'rail.png', 'redstone_dust_dot.png'];
 
 const imageCache = new Map();
 let ready = false;
@@ -19,7 +20,7 @@ export async function initTextures() {
   fs.mkdirSync(TEXTURE_DIR, { recursive: true });
 
   const alreadyCached = fs.existsSync(JAR_PATH) &&
-    fs.readdirSync(TEXTURE_DIR).some(file => file.endsWith('.png'));
+    REQUIRED_TEXTURES.every(file => fs.existsSync(path.join(TEXTURE_DIR, file)));
 
   if (!alreadyCached) {
     log.info('[TextureManager] Downloading Minecraft client JAR...');
