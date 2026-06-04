@@ -15,6 +15,9 @@ export function resolveFaces(rawBlockName) {
   );
   const states = withDefaultStates(name, parsedStates);
 
+  const forcedFaces = resolveForcedFaces(name, states);
+  if (forcedFaces) return forcedFaces;
+
   const directModel = resolveDirectModel(name, states);
   if (directModel) return directModel;
 
@@ -71,6 +74,76 @@ function withDefaultStates(name, states) {
   }
 
   return states;
+}
+
+function resolveForcedFaces(name, states) {
+  if (name === 'redstone_torch') {
+    const lit = states.lit !== 'false';
+    return all(lit ? 'redstone_torch' : 'redstone_torch_off');
+  }
+
+  if (name === 'redstone_wall_torch') {
+    const lit = states.lit !== 'false';
+    const texture = `${lit ? 'redstone_torch' : 'redstone_torch_off'}.png`;
+    return { top: texture, left: texture, right: texture };
+  }
+
+  if (name === 'lever') {
+    return {
+      top: 'lever.png',
+      left: 'cobblestone.png',
+      right: 'cobblestone.png',
+    };
+  }
+
+  if (name === 'hopper') {
+    const facing = states.facing ?? 'down';
+    const inside = 'hopper_inside.png';
+    const outside = 'hopper_outside.png';
+
+    if (facing === 'down') return { top: inside, left: outside, right: outside };
+    if (facing === 'south') return { top: outside, left: inside, right: outside };
+    if (facing === 'east') return { top: outside, left: outside, right: inside };
+    return { top: outside, left: outside, right: outside };
+  }
+
+  if (name === 'piston' || name === 'sticky_piston') {
+    const facing = states.facing ?? 'north';
+    const extended = states.extended === 'true';
+    const sticky = name === 'sticky_piston';
+    const front = extended ? 'piston_inner.png' : sticky ? 'piston_top_sticky.png' : 'piston_top.png';
+    const back = 'piston_bottom.png';
+    const side = 'piston_side.png';
+    const map = {
+      north: { left: back, right: side, top: side },
+      south: { left: front, right: side, top: side },
+      east: { left: side, right: front, top: side },
+      west: { left: side, right: back, top: side },
+      up: { left: side, right: side, top: front },
+      down: { left: side, right: side, top: side },
+    };
+    const selected = map[facing] ?? map.north;
+    return { top: selected.top, left: selected.left, right: selected.right };
+  }
+
+  if (name === 'piston_head') {
+    const sticky = states.type === 'sticky';
+    const front = sticky ? 'piston_top_sticky.png' : 'piston_top.png';
+    const side = 'piston_side.png';
+    const facing = states.facing ?? 'north';
+    const map = {
+      north: { left: side, right: side, top: side },
+      south: { left: front, right: side, top: side },
+      east: { left: side, right: front, top: side },
+      west: { left: side, right: side, top: side },
+      up: { left: side, right: side, top: front },
+      down: { left: side, right: side, top: side },
+    };
+    const selected = map[facing] ?? map.north;
+    return { top: selected.top, left: selected.left, right: selected.right };
+  }
+
+  return null;
 }
 
 function resolveFromBlockstate(name, states) {
