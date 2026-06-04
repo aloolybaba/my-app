@@ -272,35 +272,70 @@ async function logChannel(guild, title, description) {
 }
 
 async function postTranscriptAndGetURL(channel, transcriptChannel, transcriptEmbed) {
-  const htmlAttachment = await createTranscript(channel, {
+  const htmlBuffer = await createTranscript(channel, {
     limit: -1,
+    returnType: 'buffer',
     filename: `${channel.name}-transcript.html`,
     saveImages: false,
     poweredBy: false,
   });
 
-  const sentMessage = await transcriptChannel.send({
-    embeds: [transcriptEmbed],
-    files: [htmlAttachment],
-  });
+  const transcriptURL = await uploadTranscript(channel.name, htmlBuffer);
+  const linkedEmbed = EmbedBuilder.from(transcriptEmbed)
+    .setDescription(transcriptURL ? `**[View transcript](${transcriptURL})**` : '_Transcript upload failed._');
 
-  const transcriptURL = sentMessage.attachments.first()?.url ?? null;
   if (transcriptURL) {
-    const linkedEmbed = EmbedBuilder.from(transcriptEmbed)
-      .setDescription(`**[View transcript](${transcriptURL})**`)
-      .addFields({ name: 'Transcript URL', value: transcriptURL, inline: false });
-
-    await sentMessage.edit({
-      embeds: [linkedEmbed],
-      components: [new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel('View Transcript')
-          .setStyle(ButtonStyle.Link)
-          .setURL(transcriptURL),
-      )],
-      attachments: [],
-    });
+    linkedEmbed.addFields({ name: 'Transcript URL', value: transcriptURL, inline: false });
   }
 
+  await transcriptChannel.send({
+    embeds: [linkedEmbed],
+    ...(transcriptURL
+      ? {
+        components: [new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel('View Transcript')
+            .setStyle(ButtonStyle.Link)
+            .setURL(transcriptURL),
+        )],
+      }
+      : {}),
+  });
+
   return transcriptURL;
+}
+
+async function uploadTranscript(channelName, htmlBuffer) {
+  try {
+    return await uploadTranscriptToCatbox(channelName, htmlBuffer);
+  } catch (error) {
+    log.warn('Transcript upload failed; no transcript file will be posted in Discord:', error);
+    return null;
+  }
+}
+
+async function uploadTranscriptToCatbox(channelName, htmlBuffer) {
+  const form = new FormData();
+  form.append('reqtype', 'fileupload');
+  form.append(
+    'fileToUpload',
+    new Blob([htmlBuffer], { type: 'text/html' }),
+    `${channelName}-transcript.html`,
+  );
+
+  const response = await fetch('https://catbox.moe/user/api.php', {
+    method: 'POST',
+    body: form,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Catbox upload failed: ${response.status} ${response.statusText}`);
+  }
+
+  const url = (await response.text()).trim();
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error(`Catbox returned an invalid URL: ${url}`);
+  }
+
+  return url;
 }
