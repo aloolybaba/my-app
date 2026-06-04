@@ -8,7 +8,7 @@ const N = 16;
 const BASE_HW = 16;
 const BASE_QH = 8;
 const BASE_BH = 16;
-const RENDER_SCALE = clampNumber(process.env.RENDER_SCALE, 2, 1, 4);
+const RENDER_SCALE = clampNumber(process.env.RENDER_SCALE, 3, 1, 4);
 const HW = BASE_HW * RENDER_SCALE;
 const QH = BASE_QH * RENDER_SCALE;
 const BH = BASE_BH * RENDER_SCALE;
@@ -433,7 +433,6 @@ const RENDER_SKIP_BLOCKS = new Set([
   'air', 'cave_air', 'void_air',
   'redstone_torch', 'redstone_wall_torch',
   'torch', 'wall_torch', 'soul_torch', 'soul_wall_torch',
-  'lever',
   'rail', 'powered_rail', 'detector_rail', 'activator_rail',
   'ladder', 'vine', 'glow_lichen', 'sculk_vein',
   'string', 'tripwire', 'tripwire_hook',
@@ -453,6 +452,7 @@ const RENDER_SKIP_BLOCKS = new Set([
 const THIN_HEIGHT_BLOCKS = new Set([
   'repeater',
   'comparator',
+  'lever',
   'daylight_detector',
   'cauldron',
   'composter',
