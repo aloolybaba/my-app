@@ -126,9 +126,20 @@ export async function initTextures() {
   fs.mkdirSync(BLOCKSTATE_DIR, { recursive: true });
   fs.mkdirSync(MODEL_DIR, { recursive: true });
 
+  const texturesCached = fs.existsSync(TEXTURE_DIR) &&
+    fs.readdirSync(TEXTURE_DIR).some(file => file.endsWith('.png'));
+  const blockstatesCached = fs.existsSync(BLOCKSTATE_DIR) &&
+    fs.readdirSync(BLOCKSTATE_DIR).some(file => file.endsWith('.json'));
+  const modelsCached = fs.existsSync(MODEL_DIR) &&
+    fs.readdirSync(MODEL_DIR).some(file => file.endsWith('.json'));
+  const requiredAssetsCached = REQUIRED_ASSETS.every(file => fs.existsSync(file));
+
   const alreadyCached = fs.existsSync(CACHE_MARKER) &&
     fs.existsSync(JAR_PATH) &&
-    REQUIRED_ASSETS.every(file => fs.existsSync(file));
+    texturesCached &&
+    blockstatesCached &&
+    modelsCached &&
+    requiredAssetsCached;
 
   if (!alreadyCached) {
     if (!fs.existsSync(JAR_PATH)) {
