@@ -20,16 +20,31 @@ const SHADE_LEFT = 0.55;
 const SHADE_RIGHT = 0.75;
 const FACE_BLEED = N + 0.5;
 
-const BLOCK_TOP_SHADE = {
+const TEXTURE_TOP_SHADE = {
+  repeater_on: 0.62,
+  comparator_on: 0.62,
+  redstone_lamp_on: 0.6,
+  redstone_torch: 0.65,
+  redstone_wall_torch: 0.65,
+  redstone_torch_off: 0.5,
+  redstone_wall_torch_off: 0.5,
+  redstone_dust_dot: 0.68,
+  redstone_dust_line0: 0.68,
+  redstone_dust_line1: 0.68,
+  sea_lantern: 0.72,
+  glowstone: 0.72,
+  shroomlight: 0.7,
+  jack_o_lantern: 0.68,
+  end_rod: 0.75,
+  torch: 0.68,
+  wall_torch: 0.68,
+  soul_torch: 0.65,
+  soul_wall_torch: 0.65,
+  soul_lantern: 0.65,
   repeater: 0.85,
   comparator: 0.85,
-  redstone_wire: 0.8,
-  redstone_lamp: 0.88,
-  sea_lantern: 0.88,
-  glowstone: 0.88,
-  shroomlight: 0.88,
-  redstone_torch: 0.82,
-  redstone_wall_torch: 0.82,
+  repeater_off: 0.85,
+  comparator_off: 0.85,
 };
 
 const faceCanvas = createCanvas(N, N);
@@ -314,6 +329,9 @@ async function loadFaces(raw) {
     top,
     left,
     right,
+    topFilename: faces.top ?? null,
+    leftFilename: faces.left ?? null,
+    rightFilename: faces.right ?? null,
     raw,
     tint: faces.tint ?? null,
     shape: faces.shape ?? 'cube',
@@ -344,6 +362,7 @@ async function loadModelFace(face) {
   if (!face?.texture) return null;
   return {
     image: await getTexture(face.texture.replace('.png', '')),
+    filename: face.texture ?? null,
     uv: face.uv,
     rotation: face.rotation ?? 0,
     tint: face.tint ?? null,
@@ -372,7 +391,7 @@ function drawModelElement(ctx, cx, cy, element, halfWidth, quarterHeight, blockH
       ctx,
       element.faces[direction],
       element.raw,
-      element.shade === false ? 1 : modelFaceShade(direction),
+      element.shade === false ? 1 : modelFaceShade(direction, element.faces[direction]),
       modelFacePoints(direction, cx, cy, fx, fy, fz, tx, ty, tz, halfWidth, quarterHeight, blockHeight),
     );
   }
@@ -415,8 +434,8 @@ function modelFacePoints(direction, cx, cy, fx, fy, fz, tx, ty, tz, halfWidth, q
   }
 }
 
-function modelFaceShade(direction) {
-  if (direction === 'up') return SHADE_TOP;
+function modelFaceShade(direction, face = null) {
+  if (direction === 'up') return getTopShade(face?.filename);
   if (direction === 'east' || direction === 'north') return SHADE_RIGHT;
   if (direction === 'down') return 0.45;
   return SHADE_LEFT;
@@ -486,12 +505,14 @@ function drawCube(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heig
 function drawTopFace(ctx, cx, cy, faces, scaleRatio) {
   ctx.save();
   ctx.setTransform(scaleRatio, scaleRatio * 0.5, -scaleRatio, scaleRatio * 0.5, cx, cy);
-  drawFace(ctx, faces.top, faces.raw, getTopShade(faces.raw), null, 0, faces.tint, FACE_BLEED, FACE_BLEED);
+  drawFace(ctx, faces.top, faces.raw, getTopShade(faces.topFilename), null, 0, faces.tint, FACE_BLEED, FACE_BLEED);
   ctx.restore();
 }
 
-function getTopShade(rawBlockName) {
-  return BLOCK_TOP_SHADE[cleanBlockName(rawBlockName)] ?? SHADE_TOP;
+function getTopShade(textureFilename) {
+  if (!textureFilename) return SHADE_TOP;
+  const key = String(textureFilename).replace(/\.png$/, '');
+  return TEXTURE_TOP_SHADE[key] ?? SHADE_TOP;
 }
 
 function drawVisibleSides(ctx, cx, cy, faces, halfWidth, quarterHeight, scaleRatio, heightRatio) {
